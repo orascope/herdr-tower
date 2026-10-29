@@ -78,6 +78,16 @@ change it), refuses an archive that does not match the release's
 `checksums.txt`, and installs the resident supervisor (`daemon install`).
 `HERDR_TOWER_VERSION=<x.y.z>` pins a release. There is no Homebrew tap.
 
+It is also listed on [herdr's plugin marketplace](https://herdr.dev/plugins/):
+
+```bash
+herdr plugin install orascope/herdr-tower
+```
+
+The plugin's build step runs the same `install.sh` (or `install.ps1` on
+Windows), and its startup step brings the dock back whenever a herdr server
+starts. `herdr-tower init` is still yours to run.
+
 The Linux binaries need glibc 2.28 or newer, so they run on RHEL / Rocky / Alma
 8 (8.10 included) and 9, Ubuntu 20.04 and later, Debian 10 and later, and
 Fedora; they are built in `manylinux_2_28` containers
