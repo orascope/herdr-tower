@@ -2598,14 +2598,20 @@ pub fn compose(app: &App, width: usize, height: usize) -> Composed {
     // Where each guide line's own characters stop. A line wider than the
     // screen — one entry longer than the whole width — is cut with `…` in its
     // last column, and a click there must not press the key it covers.
-    let visible = |line: usize| {
-        let drawn = crate::text::line_width(&footer.lines[footer.guide_at + line]);
-        if drawn > width {
-            width.saturating_sub(1)
-        } else {
-            width
-        }
-    };
+    //
+    // Measured once per line, not once per key: every key asked twice, and
+    // that was most of a frame's time.
+    let visible: Vec<usize> = footer.lines[footer.guide_at..]
+        .iter()
+        .map(|line| {
+            if crate::text::line_width(line) > width {
+                width.saturating_sub(1)
+            } else {
+                width
+            }
+        })
+        .collect();
+    let visible = |line: usize| visible[line];
     out.keys = footer
         .guide
         .into_iter()

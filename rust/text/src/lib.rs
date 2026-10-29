@@ -69,8 +69,37 @@ use unicode_width::UnicodeWidthStr;
 /// The one measurement: a pad, a cut, a column layout and a selection all ask
 /// this, so none of them can disagree with another — or with the screen, whose
 /// rule this is (see the module docs).
+///
+/// A run of ASCII is counted a byte at a time: there a glyph is one
+/// character, one column if printable and none if a control — what the glyph
+/// walk says too, and that walk was most of a frame's time. The last ASCII
+/// character before anything else is left to the walk, since an accent or a
+/// keycap after it joins it into one glyph; the walk hands back at the next
+/// glyph that is one ASCII character, which nothing before it can join.
 pub fn width(s: &str) -> usize {
-    glyphs(s).map(glyph_width).sum()
+    let printable = |run: &str| run.bytes().filter(|b| !b.is_ascii_control()).count();
+    let mut total = 0;
+    let mut rest = s;
+    loop {
+        let Some(other) = rest.bytes().position(|b| !b.is_ascii()) else {
+            return total + printable(rest);
+        };
+        let walk_from = other.saturating_sub(1);
+        total += printable(&rest[..walk_from]);
+        rest = &rest[walk_from..];
+        let mut back_at = None;
+        for (at, glyph) in rest.grapheme_indices(true) {
+            if at > other - walk_from && glyph.len() == 1 {
+                back_at = Some(at);
+                break;
+            }
+            total += glyph_width(glyph);
+        }
+        match back_at {
+            Some(at) => rest = &rest[at..],
+            None => return total,
+        }
+    }
 }
 
 /// Pads to a **display** width. Already-wider text is left alone rather than
@@ -296,6 +325,48 @@ mod tests {
         OffsetDateTime::UNIX_EPOCH + Duration::days(20_000) + Duration::minutes(mins)
     }
 
+    /// Counting the ASCII a byte at a time is a shortcut, not a second rule:
+    /// it must say what walking every glyph says, including where ASCII meets
+    /// what joins onto it — an accent, a keycap, a CR LF.
+    #[test]
+    fn the_ascii_shortcut_counts_what_the_glyph_walk_counts() {
+        let pieces = [
+            "a",
+            "Z",
+            " ",
+            "~",
+            "\t",
+            "\r",
+            "\n",
+            "\x1b",
+            "\x7f",
+            "\u{301}",
+            "\u{fe0f}",
+            "\u{20e3}",
+            "\u{200d}",
+            "가",
+            "●",
+            "…",
+            "❤",
+            "\u{ff76}",
+            "\u{ff9e}",
+            "\u{644}",
+            "\u{627}",
+            "\u{1f1f0}",
+            "\u{1f1f7}",
+            "\u{1f468}",
+            "\u{600}",
+        ];
+        let mut rng = tower_testrng::Rng::new(0x5eed_a5c1);
+        for _ in 0..50_000 {
+            let s: String = (0..rng.below(24))
+                .map(|_| *rng.pick(&pieces).expect("pieces"))
+                .collect();
+            let walked: usize = glyphs(&s).map(glyph_width).sum();
+            assert_eq!(width(&s), walked, "{s:?}");
+        }
+    }
+
     /// The whole point of the crate: one string, padded and cut, cannot
     /// disagree with itself. Two width tables from different libraries could
     /// not pass this.
@@ -430,7 +501,7 @@ mod tests {
         let sum = |s: &str| glyphs(s).map(glyph_width).sum::<usize>();
         let mut rng = tower_testrng::Rng::new(0xfe0f);
         for _ in 0..400 {
-            let s: String = (0..rng.below(12))
+            let s: String = (0..rng.below(24))
                 .map(|_| pieces[rng.below(pieces.len())])
                 .collect();
             // Every place a cut may end: between glyphs.
