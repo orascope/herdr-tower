@@ -6,7 +6,7 @@
 //! Two lines, because two different questions get asked of a version. The
 //! first answers "which build is this" for a person filing a report; the
 //! second answers "what was it built for" when a binary turns up on the wrong
-//! machine.
+//! machine. A third says whose it is, and under which license.
 
 /// Build stamps injected at compile time.
 ///
@@ -42,6 +42,7 @@ impl VersionInfo {
 /// ```text
 /// herdr-tower v1.1.0 (commit 340e7fd, 2026-08-27)
 /// rust1.96.1 macos/aarch64
+/// Copyright 2026 ORASCOPE Co.,Ltd. · https://www.orascope.net · Apache-2.0
 /// ```
 ///
 /// The second line names the toolchain and the platform because it answers a
@@ -71,8 +72,13 @@ pub fn format_version(v: &VersionInfo) -> String {
     if !parts.is_empty() {
         head.push_str(&format!(" ({})", parts.join(", ")));
     }
-    format!("{head}\n{}", toolchain_line())
+    format!("{head}\n{}\n{COPYRIGHT_LINE}", toolchain_line())
 }
+
+/// The `NOTICE` file's holder and address, where a person actually sees them.
+/// Scripts read only the first line, so this one is free to say anything.
+pub const COPYRIGHT_LINE: &str =
+    "Copyright 2026 ORASCOPE Co.,Ltd. · https://www.orascope.net · Apache-2.0";
 
 /// Compact build label for places where the full diagnostic version is too
 /// wide, such as the popup title.
@@ -240,6 +246,8 @@ mod tests {
             second.contains(std::env::consts::ARCH),
             "the toolchain line has to name the platform: {second:?}"
         );
+        assert_eq!(got.lines().nth(2), Some(COPYRIGHT_LINE));
+        assert_eq!(got.lines().count(), 3);
     }
 
     /// A local `cargo build` injects nothing, and must still print something a
