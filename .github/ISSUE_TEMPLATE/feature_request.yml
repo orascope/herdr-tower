@@ -1,0 +1,20 @@
+name: Feature request
+description: Something the tower could do, or do differently.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you were trying to do with your agents, and where the tower got in the way or fell short.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like
+      description: How it could work, if you have an idea. A sketch of the screen or the command is welcome.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today instead

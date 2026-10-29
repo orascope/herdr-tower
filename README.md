@@ -5,11 +5,16 @@
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![rust](https://img.shields.io/badge/rust-1.89%2B-orange)](rust/README.md)
 [![tests](https://img.shields.io/badge/tests-2235-brightgreen)](rust/README.md)
+[![ci](https://github.com/orascope/herdr-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/orascope/herdr-tower/actions/workflows/ci.yml)
 
 A terminal tool that shows, on one screen, which of the Claude Code / Codex /
 Gemini / opencode agents running inside [herdr](https://herdr.dev) is
 **working, which is waiting for you, and which has finished something you have
 not looked at yet**.
+
+> **Requires [herdr](https://herdr.dev) 0.9.0 or newer.** The tower reads the
+> agents from herdr's server; without herdr its list is empty.
+> One line installs it: `herdr plugin install orascope/herdr-tower`.
 
 > **On tmux instead of herdr?** Use [agentlayer](https://github.com/netwaif/agentlayer)
 > (Korean docs), the tmux + iTerm2 control tower herdr-tower started from.
