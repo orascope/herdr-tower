@@ -1,0 +1,27 @@
+# herdr-tower as a herdr plugin: `herdr plugin install orascope/herdr-tower`.
+#
+# The tower is its own binary, not code herdr loads. The build step fetches the
+# latest release with the same installers the README gives (checksum first),
+# puts it in ~/.local/bin and installs the resident supervisor; the startup step
+# brings the dock back whenever a herdr server starts. Hooks for the agents are
+# still `herdr-tower init`, which edits their settings and so is left to you.
+id = "herdr-tower"
+name = "herdr-tower"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Multi-agent control tower: which Claude Code, Codex, Gemini or opencode agent is working, waiting for you, or done, on one screen. Installs the herdr-tower binary; run `herdr-tower init` afterwards."
+platforms = ["macos", "linux", "windows"]
+
+[[build]]
+platforms = ["macos", "linux"]
+command = ["bash", "install.sh"]
+
+[[build]]
+platforms = ["windows"]
+command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "install.ps1"]
+
+# The same script `herdr-tower dock --install-startup` installs; both are safe
+# together, since `dock` reuses the one dock workspace.
+[[startup]]
+platforms = ["macos", "linux"]
+command = ["sh", "plugins/dock-autostart/startup.sh"]

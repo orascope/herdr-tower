@@ -38,7 +38,7 @@ fn the_binary_installs_and_links_its_embedded_startup_plugin() {
     let dir = data_home.join("herdr-tower/plugins/dock-autostart");
     assert_eq!(
         std::fs::read_to_string(dir.join("herdr-plugin.toml")).unwrap(),
-        include_str!("../../../plugins/dock-autostart/herdr-plugin.toml")
+        include_str!("../../../plugins/dock-autostart/plugin.toml")
     );
     assert_eq!(
         std::fs::read_to_string(dir.join("startup.sh")).unwrap(),

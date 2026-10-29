@@ -11,7 +11,10 @@ use std::ffi::OsStr;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-pub const MANIFEST: &str = include_str!("../../../plugins/dock-autostart/herdr-plugin.toml");
+/// Kept as `plugin.toml` in the repository: the herdr.dev index lists every
+/// `herdr-plugin.toml` it finds, and the repository's one listing is the root
+/// manifest. [`install`] writes it under herdr's name.
+pub const MANIFEST: &str = include_str!("../../../plugins/dock-autostart/plugin.toml");
 pub const STARTUP: &str = include_str!("../../../plugins/dock-autostart/startup.sh");
 
 /// The stable user-owned directory linked into Herdr's plugin registry.
