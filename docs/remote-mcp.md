@@ -72,9 +72,9 @@ notification channel.
 ### Setting it up, in order
 
 1. **herdr-tower v0.21.0 or later** (v0.22.0 for the stateless revision and the fixes listed in [history.md](../history.md)). `herdr-tower mcp` is new in v0.21.0. Upgrade the
-   way you installed (the `gh release download` line under
-   [Installing](../README.md#installing)), then `herdr-tower daemon install` so the supervisor runs
-   the new binary. `herdr-tower version` should say v0.21.0 or later.
+   way you installed (the `install.sh` line under
+   [Installing](../README.md#installing) runs `herdr-tower daemon install` too, so the
+   supervisor runs the new binary). `herdr-tower version` should say v0.21.0 or later.
 2. **Tailscale with Funnel.** Install Tailscale on the Mac and log in. In the tailnet's
    admin console, turn on **MagicDNS** and **HTTPS certificates**, and allow Funnel for
    this machine (the `funnel` node attribute in the policy file). Plain Tailscale is not

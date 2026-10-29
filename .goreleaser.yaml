@@ -1,5 +1,6 @@
-# goreleaser configuration — once the repository is public, `goreleaser release`
-# publishes as far as the brew cask, through orascope/homebrew-tap.
+# goreleaser configuration — unused while GitHub Actions is off; releases are
+# built by scripts/release.sh. `goreleaser release` would publish as far as the
+# brew cask, through orascope/homebrew-tap.
 version: 2
 
 # The version comes from the git tag. A build with no tag leaves the version
