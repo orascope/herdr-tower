@@ -9,7 +9,7 @@ id = "herdr-tower"
 name = "herdr-tower"
 version = "0.1.0"
 min_herdr_version = "0.9.0"
-description = "Multi-agent control tower: which Claude Code, Codex, Gemini or opencode agent is working, waiting for you, or done, on one screen. Installs the herdr-tower binary; run `herdr-tower init` afterwards."
+description = "Multi-agent control tower in one Rust binary with a resident supervisor: which Claude Code, Codex, Gemini or opencode agent is working, waiting for you, or done, on this machine and remote ones. macOS, Linux and Windows. Installs the binary; run `herdr-tower init` afterwards."
 platforms = ["macos", "linux", "windows"]
 
 [[build]]
