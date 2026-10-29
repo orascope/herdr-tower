@@ -1,0 +1,61 @@
+name: Bug report
+description: Something in the tower, the supervisor, the hooks or the plugin does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Paths, machine names and task titles can be personal; replace them before pasting.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+      description: The steps, the command or key you used, and what the tower showed.
+    validations:
+      required: true
+  - type: textarea
+    id: version
+    attributes:
+      label: herdr-tower version
+      description: The output of `herdr-tower version`.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: herdr
+    attributes:
+      label: herdr version
+      description: The output of `herdr --version`. The server's version matters, not just the CLI's.
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows
+    validations:
+      required: true
+  - type: checkboxes
+    id: agents
+    attributes:
+      label: Agents involved
+      options:
+        - label: Claude Code
+        - label: Codex
+        - label: Gemini
+        - label: opencode
+  - type: textarea
+    id: doctor
+    attributes:
+      label: herdr-tower doctor
+      description: The output of `herdr-tower doctor`.
+      render: text
+  - type: textarea
+    id: log
+    attributes:
+      label: Supervisor log
+      description: The lines around the problem from `~/.local/state/herdr-tower/supervisor.log` (`%USERPROFILE%\.local\state\herdr-tower\supervisor.log` on Windows).
+      render: text
