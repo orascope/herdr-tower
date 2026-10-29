@@ -68,12 +68,10 @@ executable.
 
 Written down honestly. These need trying on real hardware.
 
-- **The release pipeline.** Four targets, each built on its own native runner
-  (`.github/workflows/release.yml`), with goreleaser only packaging them. It has
-  never completed: GitHub Actions is blocked by a billing failure, so no runner
-  is ever assigned. Every release so far was built on a Mac instead and
-  uploaded by hand with `scripts/release.sh <vX.Y.Z> <out-dir>`: macOS
-  natively for both architectures, and Linux inside
+- **The release pipeline.** There is no release workflow: GitHub Actions runs
+  only the tests (`.github/workflows/ci.yml`). Every release is built on a Mac
+  and uploaded by hand with `scripts/release.sh <vX.Y.Z> <out-dir>`: macOS
+  natively, Windows with MinGW-w64, and Linux inside
   `quay.io/pypa/manylinux_2_28_{aarch64,x86_64}` containers
   (`scripts/build-linux.sh`, which refuses a binary asking for newer glibc than
   2.28). Before v0.23.1 Linux was cross-built with `cargo zigbuild` pinned to

@@ -1,10 +1,10 @@
-# Tests, lints and formatting on every push and pull request.
+# Tests, lints and formatting on every push to main and every pull request.
 #
 # Every machine this project ships a binary for. The code has real per-OS
 # branches — the desktop notifier, the startup-unit word — and a filesystem or
 # CPU can change what a test sees.
 #
-# arm64 Linux is here because it was not. `release.yml` builds three targets and
+# arm64 Linux is here because it was not. The release builds three targets and
 # this tested two of them, so the one combination nobody ran was the one where
 # three tests turned out to be describing their host rather than the code — and
 # where a real defect hid: a filesystem that stamps mtimes in seconds made the
@@ -12,25 +12,32 @@
 # could never reproduce. A target we ship and do not test is a target we are
 # guessing about.
 #
-# arm64 Linux needs no special condition — `ubuntu-22.04-arm` is a standard
-# runner for private repositories as well as public ones, and it bills as Linux.
+# Releases are not built here: scripts/release.sh builds and checks them on a
+# Mac. This workflow only reads the repository.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request supersedes the run in flight.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     strategy:
       fail-fast: false
       matrix:
-        os: >-
-          ${{ fromJSON(
-            (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
-            && (github.event.repository.private
-              && '["ubuntu-22.04", "ubuntu-22.04-arm", "macos-14"]'
-              || '["ubuntu-22.04", "ubuntu-22.04-arm", "macos-14"]')
-            || '["ubuntu-22.04"]'
-          ) }}
+        os: [ubuntu-22.04, ubuntu-22.04-arm, macos-14, windows-2022]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: rust
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
