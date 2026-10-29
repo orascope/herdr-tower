@@ -65,21 +65,18 @@ model, the Discord wiring (⌁), worktree workers, the remote card.
 
 ## Installing
 
-The repository is private, so installing needs access to it — through an
-authenticated [`gh`](https://cli.github.com), or a clone.
-
 ```bash
-# the latest release, macOS on Apple silicon (linux_amd64 and linux_arm64 too)
-gh release download -R orascope/herdr-tower -p 'herdr-tower_*_darwin_arm64.tar.gz' -O - \
-  | tar -xzf - -C ~/.local/bin herdr-tower
-herdr-tower daemon install
+# the latest release — macOS on Apple silicon, Linux amd64 and arm64
+curl -fsSL https://raw.githubusercontent.com/orascope/herdr-tower/main/install.sh | bash
 # or build from source (Rust 1.89+ — it uses the standard library's file locks)
-git clone git@github.com:orascope/herdr-tower.git && cd herdr-tower
+git clone https://github.com/orascope/herdr-tower.git && cd herdr-tower
 make install   # ~/.local/bin/herdr-tower
 ```
 
-There is no Homebrew tap, and `install.sh` fetches release files anonymously,
-which a private repository does not serve.
+`install.sh` puts the binary in `~/.local/bin` (`HERDR_TOWER_BIN_DIR` to
+change it), refuses an archive that does not match the release's
+`checksums.txt`, and installs the resident supervisor (`daemon install`).
+`HERDR_TOWER_VERSION=<x.y.z>` pins a release. There is no Homebrew tap.
 
 The Linux binaries need glibc 2.28 or newer, so they run on RHEL / Rocky / Alma
 8 (8.10 included) and 9, Ubuntu 20.04 and later, Debian 10 and later, and
@@ -95,13 +92,12 @@ herdr runs natively on Windows, and so does the tower: the release has a
 does not ship).
 
 ```powershell
-gh release download -R orascope/herdr-tower -p 'herdr-tower_*_windows_amd64.zip'
-Expand-Archive herdr-tower_*_windows_amd64.zip -DestinationPath $env:USERPROFILE\.local\bin -Force
-& $env:USERPROFILE\.local\bin\herdr-tower.exe daemon install
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/orascope/herdr-tower/main/install.ps1 | iex"
 & $env:USERPROFILE\.local\bin\herdr-tower.exe init
 ```
 
-`install.ps1` does the same, checksum first, once the repository is public.
+`install.ps1` checks the zip against `checksums.txt`, puts the binary in
+`~\.local\bin\herdr-tower.exe` and installs the resident supervisor.
 What differs on Windows:
 
 - **Files** live where they do elsewhere, under `%USERPROFILE%`: the store in
