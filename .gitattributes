@@ -1,0 +1,4 @@
+# LF everywhere, on every checkout. Tests compare embedded files byte for byte
+# (include_str!), and a Windows checkout that turns them into CRLF fails them.
+* text=auto eol=lf
+*.png binary

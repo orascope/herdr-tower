@@ -1069,13 +1069,11 @@ mod tests {
         let now = OffsetDateTime::UNIX_EPOCH + time::Duration::days(20_000);
         let b = many(15, &[1, 2, 3, 4]);
         let rows = render(&b, &[], now, Some(""), 60, 12, true);
-        for (line, fg) in [(&rows[0], HEADER_TITLE)] {
-            let content = line
-                .strip_prefix(&format!("{HEADER_BG}{fg}"))
-                .and_then(|line| line.strip_suffix(RESET))
-                .expect("the header has its own background and text colour");
-            assert_eq!(tower_text::width(content), 59, "fills the safe pane width");
-        }
+        let content = rows[0]
+            .strip_prefix(&format!("{HEADER_BG}{HEADER_TITLE}"))
+            .and_then(|line| line.strip_suffix(RESET))
+            .expect("the header has its own background and text colour");
+        assert_eq!(tower_text::width(content), 59, "fills the safe pane width");
         assert!(rows[0].contains("✗ 4 closed (x: show)"));
         assert!(rows[0].contains("1-11/22"));
         assert!(!rows[1].contains(HEADER_BG), "the body has no header band");
