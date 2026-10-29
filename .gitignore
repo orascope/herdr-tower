@@ -1,0 +1,18 @@
+herdr-tower
+dist/
+
+# Rust
+rust/target/
+rust/*/target/
+
+# Worktrees made for a branch (/gnew); each is its own checkout
+.claude/worktrees/
+
+# Local design notes; kept on this machine, not published
+md/
+
+# Session and agent notes for this machine; kept local, not published
+SESSION.md
+SESSION.template.md
+CLAUDE.md
+AGENTS.md

@@ -1,0 +1,15 @@
+{
+  "id": "gemini-w2:pG",
+  "kind": "gemini",
+  "task": "mixed 한글 and ASCII 섞임",
+  "state": "WORKING",
+  "pane": {
+    "session": "eta",
+    "window": 7,
+    "pane_id": "w2:pG"
+  },
+  "cwd": "/Users/fixture/проект",
+  "updated_at": "2026-09-11T06:44:15+09:00",
+  "last_hook": "0001-01-01T00:00:00Z",
+  "state_since": "2026-09-11T06:44:15+09:00"
+}

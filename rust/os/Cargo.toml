@@ -1,0 +1,13 @@
+[package]
+name = "tower_os"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+description = "The few operating-system calls herdr-tower makes, on Unix and on Windows"
+license = "Apache-2.0"
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true }

@@ -1,0 +1,8 @@
+Usage of restore:
+  -dry-run
+    	print the plan and change nothing
+  -resume
+    	revive the conversation too (claude --resume and friends) — a bloated context comes back with it
+  -yes
+    	run the whole plan with no checklist (for scripts)
+herdr-tower: flag: help requested

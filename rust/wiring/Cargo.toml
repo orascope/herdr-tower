@@ -1,0 +1,18 @@
+[package]
+name = "tower_wiring"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+description = "Reads how an agent's folder is wired to bots and Discord"
+license = "Apache-2.0"
+
+[dependencies]
+tower_os.workspace = true
+libc = { workspace = true }
+regex = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tower_testrng.workspace = true
+tempfile = { workspace = true }

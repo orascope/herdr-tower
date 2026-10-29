@@ -1,0 +1,39 @@
+[workspace]
+resolver = "2"
+members = ["herdrx", "text", "state", "scan", "config", "notify", "wiring", "usage", "mux", "hook", "discord", "wt", "ui", "cli", "testrng", "os"]
+
+# Shared by more than one crate, so named once: every crate then asks for the
+# same version by construction rather than by keeping several lines in step.
+# The floors are the highest any crate asked for. Features stay with the crate
+# that needs them (`time = { workspace = true, features = [...] }`).
+[workspace.dependencies]
+# The crates of this workspace, named once so a member asks for a sibling by
+# name (`tower_state.workspace = true`) and no member can point at a path the
+# others do not. Paths are relative to this manifest.
+herdrx = { path = "herdrx" }
+tower_config = { path = "config" }
+tower_discord = { path = "discord" }
+tower_hook = { path = "hook" }
+tower_mux = { path = "mux" }
+tower_notify = { path = "notify" }
+tower_os = { path = "os" }
+tower_scan = { path = "scan" }
+tower_state = { path = "state" }
+tower_testrng = { path = "testrng" }
+tower_text = { path = "text" }
+tower_ui = { path = "ui" }
+tower_usage = { path = "usage" }
+tower_wiring = { path = "wiring" }
+tower_wt = { path = "wt" }
+
+libc = "0.2"
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.151"
+tempfile = "3.27.0"
+time = "0.3.55"
+unicode-width = "0.2"
+unicode-segmentation = "1.13"
+ureq = "3.4.1"
+sha2 = "0.10"
+base64 = "0.22"

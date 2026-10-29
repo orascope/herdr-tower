@@ -1,0 +1,89 @@
+#!/bin/sh
+# Refuses a push whose Rust code does not pass `make test`.
+#
+# Nothing else runs the suite. GitHub Actions is blocked by a billing failure,
+# so no CI job ever starts, and "remember to run make test" is what let a
+# failing test ship with a commit message saying it passed. This is the one
+# gate every push goes through, from every worktree of this repository —
+# people's and agents' alike. `make hooks` turns it on.
+#
+# Skipped when the suite has nothing to say: a tag (it points at a commit that
+# was already pushed and tested), a deletion, or a push that touches none of
+# rust/, the Makefile or TEST00.SH. `git push --no-verify` skips it on purpose.
+
+zero=0000000000000000000000000000000000000000
+needs=0
+pushed=""
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in refs/tags/*) continue ;; esac
+  [ "$local_sha" = "$zero" ] && continue # a deletion
+  if [ "$remote_sha" = "$zero" ]; then
+    # A new branch: compare with where it left main. If that cannot be found,
+    # what changed cannot be known — so test.
+    base=$(git merge-base "$local_sha" origin/main 2>/dev/null) || base=""
+  else
+    base=$remote_sha
+  fi
+  if [ -z "$base" ] || ! files=$(git diff --name-only "$base" "$local_sha" 2>/dev/null); then
+    needs=1
+    pushed="$pushed $local_sha"
+    continue
+  fi
+  if printf '%s\n' "$files" | grep -qE '^(rust/|Makefile$|TEST00\.SH$)'; then
+    needs=1
+    pushed="$pushed $local_sha"
+  fi
+done
+[ "$needs" = 1 ] || exit 0
+
+# 🚨 The suite runs on the working tree, so the working tree has to be what is
+# being pushed. Tested with uncommitted edits, a pass can describe a fix that is
+# not in the pushed commit — the pushed code fails while the gate reads green.
+# Tested from another checkout, it describes a different branch altogether.
+head=$(git rev-parse HEAD)
+for sha in $pushed; do
+  if [ "$sha" != "$head" ]; then
+    echo "pre-push: the suite runs on the checked-out tree, but a different commit is being pushed."
+    echo "          check out what you are pushing, or push with --no-verify to skip the test."
+    exit 1
+  fi
+done
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  echo "pre-push: tracked files have uncommitted changes, so the suite would test code that is not being pushed."
+  echo "          commit or stash them, or push with --no-verify to skip the test."
+  exit 1
+fi
+
+tmp="${TMPDIR:-/tmp}"
+if ! log=$(mktemp "${tmp%/}/herdr-tower-prepush.XXXXXX"); then
+  echo "pre-push: could not create a log file in $tmp — refusing rather than pushing untested."
+  exit 1
+fi
+echo "pre-push: make test — the whole workspace, a minute or two (git push --no-verify skips it)"
+# 🚨 Without git's environment. Git exports GIT_DIR (and more) to every hook,
+# and GIT_DIR overrides `git -C <dir>` — so the suite's fixtures, each of which
+# builds a scratch repository in a temp directory, wrote into THIS one instead.
+# The first run of this hook did exactly that: `core.bare = true` and a
+# `fixture` identity in the shared config, a commit deleting every file on the
+# branch being pushed, and stray `agent/*` worktrees. The git commands above
+# need that environment; the suite must never see it.
+for var in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do
+  unset "$var"
+done
+# 🚨 And without herdr's. From a herdr pane HERDR_ENV=1 is inherited, and the
+# live tests run whenever it is set — against the session you are working in.
+# A push gate must not open panes in it, and its verdict has to be the same
+# from a pane as from a plain terminal. Stripped, the live tests skip.
+if env -u HERDR_ENV -u HERDR_SOCKET_PATH -u HERDR_SESSION \
+     -u HERDR_PANE_ID -u HERDR_WORKSPACE_ID -u HERDR_TAB_ID \
+     CARGO_TERM_COLOR=never make test >"$log" 2>&1; then
+  total=$(grep -oE '^test result: ok\. [0-9]+' "$log" | awk '{s += $4} END {print s + 0}')
+  echo "pre-push: $total passed"
+  rm -f "$log"
+  exit 0
+fi
+echo "pre-push: make test failed — the push was refused."
+grep -E '^test .* \.\.\. FAILED$' "$log" | head -10
+tail -15 "$log"
+echo "pre-push: full output in $log"
+exit 1

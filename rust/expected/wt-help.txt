@@ -1,0 +1,14 @@
+Usage: herdr-tower wt <command>
+
+  new <task>     a worktree, a branch, a window and an agent in it
+                 [--agent claude|codex|gemini|opencode] [--repo path] [--base branch] [--test 'command']
+  list           the tasks and where they stand
+  diff <task>    what changed against base
+  test <task>    run the tests and record the result  [--cmd 'command']
+  review <task>  write a review file (a diff you annotate with "#> comment")
+  send <task>    send the review comments to the agent as changes to make
+  wait <task>…   wait for the workers to finish (several at once)  [--timeout 30m]
+  drive <task>…  wait, test, hand failures back, until it is merge-ready or stuck
+                 [--attempts 2] [--timeout 30m] [--cmd 'command']
+  merge <task>   show the merge and run it once confirmed (never automatic)
+  clean <task>   tidy up, keeping anything unsafe (refuses while uncommitted or unmerged)

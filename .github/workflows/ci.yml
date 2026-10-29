@@ -1,0 +1,56 @@
+# Tests, lints and formatting on every push and pull request.
+#
+# Every machine this project ships a binary for. The code has real per-OS
+# branches — the desktop notifier, the startup-unit word — and a filesystem or
+# CPU can change what a test sees.
+#
+# arm64 Linux is here because it was not. `release.yml` builds three targets and
+# this tested two of them, so the one combination nobody ran was the one where
+# three tests turned out to be describing their host rather than the code — and
+# where a real defect hid: a filesystem that stamps mtimes in seconds made the
+# codex rollout walk answer with the *older* session, which APFS's nanoseconds
+# could never reproduce. A target we ship and do not test is a target we are
+# guessing about.
+#
+# arm64 Linux needs no special condition — `ubuntu-22.04-arm` is a standard
+# runner for private repositories as well as public ones, and it bills as Linux.
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: >-
+          ${{ fromJSON(
+            (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
+            && (github.event.repository.private
+              && '["ubuntu-22.04", "ubuntu-22.04-arm", "macos-14"]'
+              || '["ubuntu-22.04", "ubuntu-22.04-arm", "macos-14"]')
+            || '["ubuntu-22.04"]'
+          ) }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+
+      # The toolchain the manifests declare, not the newest one. A build that only
+      # works on latest stable makes `rust-version` a decoration — and it has
+      # already caught two features used below the stated minimum.
+      - name: Install the declared minimum toolchain
+        run: |
+          msrv=$(grep -m1 '^rust-version' cli/Cargo.toml | cut -d'"' -f2)
+          echo "MSRV is $msrv"
+          rustup toolchain install "$msrv" --profile minimal --component clippy,rustfmt
+          rustup override set "$msrv"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      # herdr is not available here, so the live tests skip themselves. That is the
+      # point of writing them to skip rather than to fake a server: what runs here
+      # is everything that does not need one.
+      - run: cargo test --workspace
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo fmt --check

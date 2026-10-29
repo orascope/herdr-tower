@@ -1,0 +1,15 @@
+[package]
+name = "tower_notify"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+description = "Desktop and Discord notifications for state transitions"
+license = "Apache-2.0"
+
+[dependencies]
+tower_config.workspace = true
+tower_state.workspace = true
+serde_json = { workspace = true }
+
+[dev-dependencies]
+time = { workspace = true }

@@ -1,0 +1,9 @@
+id = "herdr-tower.dock-autostart"
+name = "Herdr Tower Dock Autostart"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Restore the herdr-tower workspace whenever Herdr starts."
+platforms = ["linux", "macos"]
+
+[[startup]]
+command = ["sh", "startup.sh"]

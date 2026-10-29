@@ -1,0 +1,15 @@
+[package]
+name = "tower_text"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "Apache-2.0"
+description = "One display-width table, shared by everything that draws"
+
+[dependencies]
+time = { workspace = true }
+unicode-segmentation = { workspace = true }
+unicode-width = { workspace = true }
+
+[dev-dependencies]
+tower_testrng.workspace = true

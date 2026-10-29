@@ -1,0 +1,18 @@
+[package]
+name = "tower_state"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+description = "Agent records for the control tower"
+license = "Apache-2.0"
+
+[dependencies]
+tower_os.workspace = true
+libc = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true, features = ["serde-well-known", "formatting", "parsing", "local-offset"] }
+
+[dev-dependencies]
+tower_testrng.workspace = true
+tempfile = { workspace = true }

@@ -1,0 +1,16 @@
+[package]
+name = "tower_config"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+description = "User configuration"
+license = "Apache-2.0"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_ignored = "0.1.14"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tower_testrng.workspace = true

@@ -1,0 +1,19 @@
+[package]
+name = "tower_hook"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+description = "CLI hook events into agent records"
+license = "Apache-2.0"
+
+[dependencies]
+tower_scan.workspace = true
+tower_state.workspace = true
+herdrx.workspace = true
+serde = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
+
+[dev-dependencies]
+tower_testrng.workspace = true
+tempfile = { workspace = true }

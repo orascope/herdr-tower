@@ -1,0 +1,34 @@
+herdr-tower — the multi-agent control tower for herdr
+
+Usage: herdr-tower [command] [flags]
+  With no arguments it opens the TUI (inside herdr).
+
+Commands:
+  status         list sessions and their state  [--json | --line]
+  report         what each session did in a window: turns, work, time waiting on you, errors, drive verdicts  [--since 12h] [--json]
+  info <name|id> one session in detail (model, ctx, hook wiring, …)
+  dock           run the tower in its own herdr workspace, opened with a click  [--focus | --install-startup]
+  card           post the Discord dashboard card  [--out print only] [--event transition-triggered]
+  init           hooks, the herdr key, skills — idempotent  [--dry-run]
+  daemon         resident supervisor  (one process, multiple Herdr sockets)
+  doctor         check that every hook, plugin and service still points at a real binary
+  open <folder>  a new herdr tab in a folder with an agent started in it  [--agent claude] [--workspace label] [--prompt text] [--json]
+  close <agent>  close an agent's pane — asks first; refuses a busy one unless --force  [--force] [--yes]
+  interrupt <agent>  stop a working agent's turn (presses Escape)
+  workspaces     herdr's workspaces, with how many agents each holds — the empty ones too  [--json]
+  resume [id]    reopen a dead session's conversation in a new window (emergency recovery)
+  restore        revive dead sessions in bulk — pick from a checklist  [--resume the conversation too] [--yes all] [--dry-run] [id ...]  (bots started at login are left out)
+  loop <command> continue one opted-in session after 10m idle  (start·stop·list·done·blocked; 168h lifetime, unlimited sends)
+  board <command>  what an advisor handed to which worker — a wt task or a pane — with each one's progress  (add·send·assign·next·prio·move·link·wake·done·drop·note·rm·prune·clear·show·open)
+  tree [link|unlink]  who works under whom in the session list; link a pane under a coordinator (moved into its workspace when it is in another)
+  schedule       send a message at a set time, once or every day — waits for a busy agent  (list·add·close·wake·rm; `schedule close 19:00`)
+  wake-all       tell every session to carry on  [--yes] [--except name,..] [--watch] [--timeout 10m]
+  close-all      tell every session to wrap up  (same flags as wake-all)
+  broadcast <message>  send any message to every session
+  wt <command>   worktree workers (new·list·diff·test·review·send·wait·merge·clean) — 'herdr-tower wt' for detail
+  usage          plan limits: claude and codex, 5h and 7d windows used and when each resets  [--json] [--watch]
+  host           this machine's processor counters, memory and system, which a tower on another machine reads over ssh
+  config [get|set|unset|keys|path]  read or change config.json  (`config keys` lists every setting; secrets hidden unless --reveal)
+  mcp <command>  a remote MCP server, to read and drive the tower from a phone's Claude app  (serve·pair·grants·revoke·on·off)
+  version        version information (-v/--version)
+  help           this help (-h/--help)

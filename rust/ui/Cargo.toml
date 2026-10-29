@@ -1,0 +1,28 @@
+[package]
+name = "tower_ui"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "Apache-2.0"
+description = "Terminal control tower (ratatui)"
+
+[dependencies]
+tower_state.workspace = true
+tower_wt.workspace = true
+tower_text.workspace = true
+tower_scan.workspace = true
+tower_usage.workspace = true
+tower_mux.workspace = true
+tower_wiring.workspace = true
+tower_config.workspace = true
+herdrx.workspace = true
+tower_os.workspace = true
+unicode-width = { workspace = true }
+time = { workspace = true, features = ["formatting", "local-offset", "parsing"] }
+ratatui = "0.30.2"
+crossterm = "0.29.0"
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tower_testrng.workspace = true
+tempfile = { workspace = true }

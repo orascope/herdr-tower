@@ -1,0 +1,112 @@
+# Builds each target on its own machine, then packages them together.
+#
+# Not cross-compiled, and that is the whole design. `ring` — the TLS the HTTP
+# client uses, through rustls — carries assembly, so building Linux from macOS
+# needs a C cross-toolchain. goreleaser's Rust builder answers that with `zig cc`,
+# which works but adds a toolchain to install and to keep working. A native runner
+# per target needs nothing, and GitHub has one for all four.
+#
+# glibc is why the Linux jobs sit on 22.04 rather than the newest image: a binary
+# linked against a newer glibc refuses to start on an older distribution, and the
+# oldest image still supported is the one that produces the most portable binary.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04,     target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: macos-14,         target: aarch64-apple-darwin }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the version comes from the tag
+
+      - run: rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: ${{ matrix.target }}
+
+      # The version is stamped through the environment rather than ldflags, which
+      # a Rust binary has no equivalent for. `rust/cli/build.rs` reads these three
+      # and falls back to git only when they are empty — so a release build never
+      # consults git and two builds of one tag agree.
+      - name: Build
+        working-directory: rust
+        env:
+          HERDR_TOWER_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          HERDR_TOWER_COMMIT: ${{ github.sha }}
+        run: |
+          export HERDR_TOWER_DATE=$(git -C .. log -1 --format=%cI)
+          cargo build --release --package tower_cli --target ${{ matrix.target }}
+
+      - name: Check it runs
+        if: runner.os == 'Linux' || matrix.target == 'aarch64-apple-darwin'
+        working-directory: rust
+        run: ./target/${{ matrix.target }}/release/herdr-tower version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: herdr-tower-${{ matrix.target }}
+          path: rust/target/${{ matrix.target }}/release/herdr-tower
+          if-no-files-found: error
+
+  package:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist-bin
+
+      # goreleaser is handed finished binaries rather than asked to build. Its
+      # `prebuilt` builder names directories by *its* os/arch, not by the Rust
+      # target triple, so the translation happens here — one table in one place
+      # rather than a template expression in the config.
+      - name: Arrange the binaries where goreleaser expects them
+        run: |
+          set -euo pipefail
+          declare -A as=(
+            [x86_64-unknown-linux-gnu]=linux_amd64
+            [aarch64-unknown-linux-gnu]=linux_arm64
+            [aarch64-apple-darwin]=darwin_arm64
+          )
+          for d in dist-bin/herdr-tower-*; do
+            target="${d#dist-bin/herdr-tower-}"
+            dest="${as[$target]:?unknown target $target}"
+            mkdir -p "prebuilt/$dest"
+            mv "$d/herdr-tower" "prebuilt/$dest/herdr-tower"
+            chmod +x "prebuilt/$dest/herdr-tower"
+          done
+          find prebuilt -type f
+          # Four binaries, or the release would ship a hole.
+          test "$(find prebuilt -type f | wc -l)" -eq 4
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The brew cask lives in a different repository, so the default token
+          # cannot write it. Without this secret the cask step skips and the
+          # GitHub release still publishes.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

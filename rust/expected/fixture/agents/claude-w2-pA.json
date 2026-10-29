@@ -1,0 +1,15 @@
+{
+  "id": "claude-w2:pA",
+  "kind": "claude",
+  "ask": "권한을 승인해 주세요 — 파일 쓰기",
+  "state": "WAITING",
+  "pane": {
+    "session": "alpha",
+    "window": 1,
+    "pane_id": "w2:pA"
+  },
+  "cwd": "/Users/fixture/proj-alpha",
+  "updated_at": "2026-09-11T02:29:15+09:00",
+  "last_hook": "2026-09-11T02:29:15+09:00",
+  "state_since": "2026-09-11T02:29:15+09:00"
+}

@@ -1,0 +1,14 @@
+{
+  "id": "gemini-w2:pI",
+  "kind": "gemini",
+  "state": "DEAD",
+  "pane": {
+    "session": "iota",
+    "window": 9,
+    "pane_id": "w2:pI"
+  },
+  "cwd": "/Users/fixture/proj-iota",
+  "updated_at": "2026-09-08T07:29:15+09:00",
+  "last_hook": "0001-01-01T00:00:00Z",
+  "state_since": "2026-09-08T07:29:15+09:00"
+}

@@ -1,0 +1,18 @@
+[package]
+name = "tower_mux"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+description = "Backend selection and the operations built on the herdr client"
+license = "Apache-2.0"
+
+[dependencies]
+tower_os.workspace = true
+tower_state.workspace = true
+tower_config.workspace = true
+herdrx.workspace = true
+serde_json = { workspace = true }
+time = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

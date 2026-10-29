@@ -1,0 +1,136 @@
+[
+  {
+    "id": "claude-w2:pA",
+    "kind": "claude",
+    "ask": "권한을 승인해 주세요 — 파일 쓰기",
+    "state": "WAITING",
+    "pane": {
+      "session": "alpha",
+      "window": 1,
+      "pane_id": "w2:pA"
+    },
+    "cwd": "/Users/fixture/proj-alpha",
+    "updated_at": "2026-09-11T02:29:15+09:00",
+    "last_hook": "2026-09-11T02:29:15+09:00",
+    "state_since": "2026-09-11T02:29:15+09:00"
+  },
+  {
+    "id": "claude-w2:pB",
+    "kind": "claude",
+    "ask": "continue?",
+    "state": "WAITING",
+    "pane": {
+      "session": "beta",
+      "window": 2,
+      "pane_id": "w2:pB"
+    },
+    "cwd": "/Users/fixture/proj-beta",
+    "updated_at": "2026-09-11T07:27:45+09:00",
+    "last_hook": "2026-09-11T07:27:45+09:00",
+    "state_since": "2026-09-11T07:27:45+09:00"
+  },
+  {
+    "id": "claude-w2:pC",
+    "kind": "claude",
+    "task": "리팩터링 마무리",
+    "ask": "테스트를 돌릴까요?",
+    "state": "DONE_UNREAD",
+    "pane": {
+      "session": "gamma",
+      "window": 3,
+      "pane_id": "w2:pC"
+    },
+    "cwd": "/Users/fixture",
+    "updated_at": "2026-09-11T07:28:45+09:00",
+    "last_hook": "0001-01-01T00:00:00Z",
+    "state_since": "2026-09-11T07:28:45+09:00"
+  },
+  {
+    "id": "codex-w2:pE",
+    "kind": "codex",
+    "task": "빌드 실패",
+    "state": "ERROR",
+    "pane": {
+      "session": "eps",
+      "window": 5,
+      "pane_id": "w2:pE"
+    },
+    "cwd": "/tmp/outside-home",
+    "updated_at": "2026-09-10T05:29:15+09:00",
+    "last_hook": "0001-01-01T00:00:00Z",
+    "state_since": "2026-09-10T05:29:15+09:00"
+  },
+  {
+    "id": "gemini-w2:pG",
+    "kind": "gemini",
+    "task": "mixed 한글 and ASCII 섞임",
+    "state": "WORKING",
+    "pane": {
+      "session": "eta",
+      "window": 7,
+      "pane_id": "w2:pG"
+    },
+    "cwd": "/Users/fixture/проект",
+    "updated_at": "2026-09-11T06:44:15+09:00",
+    "last_hook": "0001-01-01T00:00:00Z",
+    "state_since": "2026-09-11T06:44:15+09:00"
+  },
+  {
+    "id": "claude-w2:pD",
+    "kind": "claude",
+    "task": "한글 작업 설명이 길면 열 폭을 어떻게 먹는지 확인한다",
+    "state": "WORKING",
+    "pane": {
+      "session": "delta",
+      "window": 4,
+      "pane_id": "w2:pD"
+    },
+    "cwd": "/Users/fixture/deeply/nested/worktrees/feat-a-very-long-branch-name-that-will-not-fit-20260911",
+    "updated_at": "2026-09-11T07:26:15+09:00",
+    "last_hook": "0001-01-01T00:00:00Z",
+    "state_since": "2026-09-11T07:26:15+09:00"
+  },
+  {
+    "id": "codex-w2:pF",
+    "kind": "codex",
+    "state": "IDLE",
+    "pane": {
+      "session": "zeta",
+      "window": 6,
+      "pane_id": "w2:pF"
+    },
+    "cwd": "/Users/fixture/proj-zeta",
+    "model": "claude-sonnet-4-20250514",
+    "updated_at": "2026-09-11T05:29:15+09:00",
+    "last_hook": "0001-01-01T00:00:00Z",
+    "state_since": "2026-09-11T05:29:15+09:00"
+  },
+  {
+    "id": "aider-w2:pH",
+    "kind": "aider",
+    "state": "IDLE",
+    "pane": {
+      "session": "theta",
+      "window": 8,
+      "pane_id": "w2:pH"
+    },
+    "cwd": "/Users/fixture/proj-theta",
+    "updated_at": "2026-09-11T07:19:15+09:00",
+    "last_hook": "0001-01-01T00:00:00Z",
+    "state_since": "2026-09-11T07:19:15+09:00"
+  },
+  {
+    "id": "gemini-w2:pI",
+    "kind": "gemini",
+    "state": "DEAD",
+    "pane": {
+      "session": "iota",
+      "window": 9,
+      "pane_id": "w2:pI"
+    },
+    "cwd": "/Users/fixture/proj-iota",
+    "updated_at": "2026-09-08T07:29:15+09:00",
+    "last_hook": "0001-01-01T00:00:00Z",
+    "state_since": "2026-09-08T07:29:15+09:00"
+  }
+]

@@ -1,0 +1,15 @@
+{
+  "id": "codex-w2:pF",
+  "kind": "codex",
+  "state": "IDLE",
+  "pane": {
+    "session": "zeta",
+    "window": 6,
+    "pane_id": "w2:pF"
+  },
+  "cwd": "/Users/fixture/proj-zeta",
+  "model": "claude-sonnet-4-20250514",
+  "updated_at": "2026-09-11T05:29:15+09:00",
+  "last_hook": "0001-01-01T00:00:00Z",
+  "state_since": "2026-09-11T05:29:15+09:00"
+}

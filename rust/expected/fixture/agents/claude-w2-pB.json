@@ -1,0 +1,15 @@
+{
+  "id": "claude-w2:pB",
+  "kind": "claude",
+  "ask": "continue?",
+  "state": "WAITING",
+  "pane": {
+    "session": "beta",
+    "window": 2,
+    "pane_id": "w2:pB"
+  },
+  "cwd": "/Users/fixture/proj-beta",
+  "updated_at": "2026-09-11T07:27:45+09:00",
+  "last_hook": "2026-09-11T07:27:45+09:00",
+  "state_since": "2026-09-11T07:27:45+09:00"
+}

@@ -1,0 +1,15 @@
+{
+  "id": "claude-w2:pD",
+  "kind": "claude",
+  "task": "한글 작업 설명이 길면 열 폭을 어떻게 먹는지 확인한다",
+  "state": "WORKING",
+  "pane": {
+    "session": "delta",
+    "window": 4,
+    "pane_id": "w2:pD"
+  },
+  "cwd": "/Users/fixture/deeply/nested/worktrees/feat-a-very-long-branch-name-that-will-not-fit-20260911",
+  "updated_at": "2026-09-11T07:26:15+09:00",
+  "last_hook": "0001-01-01T00:00:00Z",
+  "state_since": "2026-09-11T07:26:15+09:00"
+}

@@ -1,0 +1,20 @@
+[
+  {
+    "accent_color": 5659494,
+    "components": [
+      {
+        "content": "### Agents — 🟡 wait 2 · 🟠 new (unread) 1 · 🔴 error 1 · 🟢 working 2 · ⚪ idle 2\n-# default model Claude auto · Codex auto · Gemini auto",
+        "type": 10
+      },
+      {
+        "content": "-# ── alpha ──────\n🟡 **claude** `~/proj-alpha` — wait 5h\n-# 권한을 승인해 주세요 — 파일 쓰기\n-# ── beta ──────\n🟡 **claude** `~/proj-beta` — wait 1m\n-# continue?\n-# ── gamma ──────\n🟠 **claude** `~` — new (unread) just now\n-# 테스트를 돌릴까요?\n-# ── eps ──────\n🔴 **codex** `/tmp/outside-home` — error 1d\n-# 빌드 실패\n-# ── eta ──────\n🟢 **gemini** `~/проект` — working? 45m\n-# mixed 한글 and ASCII 섞임\n-# ── delta ──────\n🟢 **claude** `~/deeply/nested/worktrees/feat-a-very-long-branch-name-that-will-not-fit-20260911` — working 3m\n-# 한글 작업 설명이 길면 열 폭을 어떻게 먹는지 확인한다\n-# ── zeta ──────\n⚪ **codex** `~/proj-zeta` — idle\n-# ── theta ──────\n⚪ **aider** `~/proj-theta` — idle",
+        "type": 10
+      }
+    ],
+    "type": 17
+  },
+  {
+    "content": "-# updated \u003ct:1789079356:R\u003e",
+    "type": 10
+  }
+]

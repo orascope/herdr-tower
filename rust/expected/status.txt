@@ -1,0 +1,10 @@
+STATE       AGENT   SESSION  TASK                                    DIR                                                                                SINCE
+[wait]      claude  alpha    권한을 승인해 주세요 — 파일 쓰기        ~/proj-alpha                                                                       5h
+[wait]      claude  beta     continue?                               ~/proj-beta                                                                        1m
+[done]      claude  gamma    테스트를 돌릴까요?                      ~                                                                                  just now
+[err]       codex   eps      빌드 실패                               /tmp/outside-home                                                                  1d
+[working?]  gemini  eta      mixed 한글 and ASCII 섞임               ~/проект                                                                           45m
+[working]   claude  delta    한글 작업 설명이 길면 열 폭을 어떻게 …  ~/deeply/nested/worktrees/feat-a-very-long-branch-name-that-will-not-fit-20260911  3m
+[idle]      codex   zeta                                             ~/proj-zeta                                                                        2h
+[idle]      aider   theta                                            ~/proj-theta                                                                       10m
+[dead]      gemini  iota                                             ~/proj-iota                                                                        3d

@@ -1,0 +1,61 @@
+[
+  {
+    "arguments": [],
+    "description": "Finds the agents waiting on the user and what each one asks.",
+    "name": "triage",
+    "title": "What needs me"
+  },
+  {
+    "arguments": [
+      {
+        "description": "The agent: its id from list_agents (like claude-w2:p9B) or its workspace name.",
+        "name": "agent",
+        "required": true
+      }
+    ],
+    "description": "Where one agent stands: its state, its folder and branch, and what its screen shows.",
+    "name": "agent_status",
+    "title": "One agent's status"
+  },
+  {
+    "arguments": [
+      {
+        "description": "The repository's path, as list_boards shows it. Leave it out to pick from list_boards.",
+        "name": "repo",
+        "required": false
+      }
+    ],
+    "description": "Which items on a repository's dispatch board are ready for review, and what each worker reports.",
+    "name": "review_board",
+    "title": "Review a dispatch board"
+  },
+  {
+    "arguments": [
+      {
+        "description": "The repository's path, as list_boards shows it.",
+        "name": "repo",
+        "required": true
+      },
+      {
+        "description": "What to hand out, in the user's words. Leave it out to send what is already planned.",
+        "name": "work",
+        "required": false
+      }
+    ],
+    "description": "Plans work on a repository's dispatch board and sends it to workers, after the user agrees to the plan.",
+    "name": "dispatch",
+    "title": "Hand out work"
+  },
+  {
+    "arguments": [
+      {
+        "description": "How far back, like 30m, 12h or 2d. Default 12h.",
+        "name": "since",
+        "required": false
+      }
+    ],
+    "description": "A summary of what every agent did over a recent window.",
+    "name": "daily_report",
+    "title": "What the agents did"
+  }
+]

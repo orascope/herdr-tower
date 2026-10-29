@@ -1,0 +1,15 @@
+{
+  "id": "codex-w2:pE",
+  "kind": "codex",
+  "task": "빌드 실패",
+  "state": "ERROR",
+  "pane": {
+    "session": "eps",
+    "window": 5,
+    "pane_id": "w2:pE"
+  },
+  "cwd": "/tmp/outside-home",
+  "updated_at": "2026-09-10T05:29:15+09:00",
+  "last_hook": "0001-01-01T00:00:00Z",
+  "state_since": "2026-09-10T05:29:15+09:00"
+}

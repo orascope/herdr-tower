@@ -1,0 +1,16 @@
+{
+  "id": "claude-w2:pC",
+  "kind": "claude",
+  "task": "리팩터링 마무리",
+  "ask": "테스트를 돌릴까요?",
+  "state": "DONE_UNREAD",
+  "pane": {
+    "session": "gamma",
+    "window": 3,
+    "pane_id": "w2:pC"
+  },
+  "cwd": "/Users/fixture",
+  "updated_at": "2026-09-11T07:28:45+09:00",
+  "last_hook": "0001-01-01T00:00:00Z",
+  "state_since": "2026-09-11T07:28:45+09:00"
+}

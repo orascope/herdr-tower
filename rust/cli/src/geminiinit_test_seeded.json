@@ -1,0 +1,42 @@
+{
+  "herdr-tower": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "'/abs/herdr-tower' hook gemini --event post-tool-use",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "PreInvocation": [
+      {
+        "command": "'/abs/herdr-tower' hook gemini --event pre-invocation",
+        "timeout": 10,
+        "type": "command"
+      }
+    ],
+    "Stop": [
+      {
+        "command": "'/abs/herdr-tower' hook gemini --event stop",
+        "timeout": 10,
+        "type": "command"
+      }
+    ]
+  },
+  "my-linter": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "./lint.sh"
+          }
+        ],
+        "matcher": "run_command"
+      }
+    ]
+  }
+}

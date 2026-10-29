@@ -1,0 +1,14 @@
+{
+  "id": "aider-w2:pH",
+  "kind": "aider",
+  "state": "IDLE",
+  "pane": {
+    "session": "theta",
+    "window": 8,
+    "pane_id": "w2:pH"
+  },
+  "cwd": "/Users/fixture/proj-theta",
+  "updated_at": "2026-09-11T07:19:15+09:00",
+  "last_hook": "0001-01-01T00:00:00Z",
+  "state_since": "2026-09-11T07:19:15+09:00"
+}
