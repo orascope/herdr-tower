@@ -1,4 +1,4 @@
-# 🗼 herdr-tower 🗼 — the multi-agent control tower (herdr)
+# 🗼 herdr-tower 🗼 — the multi-agent control tower for Herdr TUI
 
 ### Four agents, one conversation. Who is working and who is waiting, on one screen.
 
@@ -8,12 +8,16 @@
 [![ci](https://github.com/orascope/herdr-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/orascope/herdr-tower/actions/workflows/ci.yml)
 
 A terminal tool that shows, on one screen, which of the Claude Code / Codex /
-Gemini / opencode agents running inside [herdr](https://herdr.dev) is
+Gemini / opencode agents running inside [Herdr TUI](https://github.com/herdrdev/herdr) is
 **working, which is waiting for you, and which has finished something you have
 not looked at yet**.
 
-> **Requires [herdr](https://herdr.dev) 0.9.0 or newer.** The tower reads the
-> agents from herdr's server; without herdr its list is empty.
+> **Requires [Herdr TUI](https://github.com/herdrdev/herdr) 0.9.0 or newer** —
+> the terminal herdr (`herdrdev/herdr`, the `herdr` command). The tower reads the
+> agents from its server; without it the list is empty. The Herdr desktop app
+> ([herdr-app](https://github.com/herdrdev/herdr-app)) and
+> [herdr-core](https://github.com/herdrdev/herdr-core) (`hc`) keep their agents
+> apart from Herdr TUI and are not supported.
 > One line installs it: `herdr plugin install orascope/herdr-tower`.
 
 > **On tmux instead of herdr?** Use [agentlayer](https://github.com/netwaif/agentlayer)
@@ -131,7 +135,7 @@ What differs on Windows:
 - Not on Windows: desktop notifications and the Discord bot wiring (it reads
   launchd and systemd files).
 
-[herdr](https://herdr.dev) 0.9.0 or newer is required — the running *server*,
+[Herdr TUI](https://github.com/herdrdev/herdr) 0.9.0 or newer is required — the running *server*,
 not just the CLI (`herdr plugin link` names the version it is talking to). Older
 servers are not supported. The tower runs inside a herdr pane and reads the
 agents over herdr's socket API. Without herdr the list looks empty.
