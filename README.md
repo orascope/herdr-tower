@@ -4,7 +4,7 @@
 
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![rust](https://img.shields.io/badge/rust-1.89%2B-orange)](rust/README.md)
-[![tests](https://img.shields.io/badge/tests-2235-brightgreen)](rust/README.md)
+[![tests](https://img.shields.io/badge/tests-2236-brightgreen)](rust/README.md)
 [![ci](https://github.com/orascope/herdr-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/orascope/herdr-tower/actions/workflows/ci.yml)
 
 A terminal tool that shows, on one screen, which of the Claude Code / Codex /

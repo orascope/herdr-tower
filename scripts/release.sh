@@ -3,7 +3,7 @@
 # Copyright 2026 ORASCOPE Co.,Ltd. (https://www.orascope.net)
 # Builds, packages and checks the release binaries on a Mac.
 #
-# GitHub Actions cannot run here (billing), so releases are built locally:
+# Releases are built locally (CI only tests):
 # macOS natively, Linux in manylinux_2_28 containers (scripts/build-linux.sh),
 # Windows x86_64 with the MinGW-w64 cross linker (`brew install mingw-w64`,
 # `rustup target add x86_64-pc-windows-gnu`). Nothing is tagged or published — the script ends
