@@ -196,6 +196,84 @@ mod tests {
         }
     }
 
+    /// Round trip and cross validation over generated triples: formatting
+    /// `v{a}.{b}.{c}` and reading it back is the identity, and comparing two
+    /// readings agrees with comparing the numbers themselves — never the
+    /// strings, where "v0.9.0" > "v0.10.0".
+    #[test]
+    fn release_triples_round_trip_and_order_as_numbers() {
+        let mut rng = tower_testrng::Rng::new(0x0072_656c_6561_7365);
+        let mut pick = || -> u64 {
+            match rng.below(4) {
+                0 => rng.below(10) as u64,
+                1 => rng.below(1000) as u64,
+                2 => u64::MAX - rng.below(3) as u64,
+                _ => rng.below(100) as u64,
+            }
+        };
+        for _ in 0..2000 {
+            let a = (pick(), pick(), pick());
+            let b = (pick(), pick(), pick());
+            let fa = format!("v{}.{}.{}", a.0, a.1, a.2);
+            let fb = format!("v{}.{}.{}", b.0, b.1, b.2);
+            assert_eq!(release_triple(&fa), Some(a), "{fa}");
+            assert_eq!(release_triple(&format!("{fa}-dirty (commit x)")), Some(a));
+            assert_eq!(release_triple(&fa).cmp(&release_triple(&fb)), a.cmp(&b));
+            let at = OffsetDateTime::UNIX_EPOCH;
+            let snap = DaemonSnapshot {
+                version: fa.clone(),
+                latest_release: fb.clone(),
+                ..snapshot_with(Vec::new(), at)
+            };
+            assert_eq!(snap.newer_release().is_some(), b > a, "{fa} vs {fb}");
+        }
+    }
+
+    /// Edge cases: one past u64, signs, inner spaces, uppercase V, and a
+    /// prefix only — none of them is a release.
+    #[test]
+    fn release_triple_refuses_near_misses() {
+        for bad in [
+            "v18446744073709551616.0.0",
+            "v-1.2.3",
+            "v1.-2.3",
+            "v 1.2.3",
+            "V1.2.3",
+            "v1.2.3.",
+            "v.1.2.3",
+            "v１.2.3",
+            "-v1.2.3",
+        ] {
+            assert_eq!(release_triple(bad), None, "{bad}");
+        }
+        assert_eq!(
+            release_triple("  v1.2.3  "),
+            Some((1, 2, 3)),
+            "spaces around"
+        );
+        assert_eq!(
+            release_triple("v01.002.3"),
+            Some((1, 2, 3)),
+            "leading zeros read as numbers"
+        );
+    }
+
+    /// A heartbeat from a supervisor older than the field reads as an empty
+    /// tag — offering nothing — and an empty tag is left out of the file.
+    #[test]
+    fn an_older_file_has_no_latest_release() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = DaemonStore::new(dir.path());
+        let at = OffsetDateTime::UNIX_EPOCH + time::Duration::days(20_000);
+        let snapshot = snapshot_with(Vec::new(), at);
+        store.write(&snapshot).unwrap();
+        let body = fs::read_to_string(dir.path().join(FILE)).unwrap();
+        assert!(!body.contains("latest_release"), "{body}");
+        let back = store.read().unwrap().unwrap();
+        assert_eq!(back.latest_release, "");
+        assert_eq!(back.newer_release(), None);
+    }
+
     /// Offered only when strictly newer, compared as numbers, and never to a
     /// supervisor whose own version cannot be read.
     #[test]

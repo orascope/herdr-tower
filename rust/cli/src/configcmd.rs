@@ -347,6 +347,30 @@ mod tests {
         assert!(keys_text().contains("parallax"));
     }
 
+    /// Round trip: `config set update_check false` lands as a bool the
+    /// release check reads as off, `true` back on, and `unset` gives the
+    /// default (on) back — the opt-out the README promises.
+    #[test]
+    fn update_check_can_be_turned_off_and_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let enabled = |path: &std::path::Path| {
+            serde_json::from_value::<Config>(read(path).unwrap())
+                .unwrap()
+                .update_check_enabled()
+        };
+        run_in(&path, &["set", "update_check", "false"]).unwrap();
+        assert_eq!(read(&path).unwrap(), json!({"update_check": false}));
+        assert!(!enabled(&path));
+        run_in(&path, &["set", "update_check", "true"]).unwrap();
+        assert!(enabled(&path));
+        run_in(&path, &["unset", "update_check"]).unwrap();
+        assert_eq!(read(&path).unwrap(), json!({}));
+        assert!(enabled(&path), "on by default");
+        assert!(run_in(&path, &["set", "update_check", "maybe"]).is_err());
+        assert!(keys_text().contains("update_check"));
+    }
+
     #[test]
     fn unknown_keys_and_bad_values_change_nothing() {
         let mut doc = json!({"notify_macos":false});

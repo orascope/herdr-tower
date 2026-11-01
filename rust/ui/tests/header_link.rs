@@ -47,6 +47,11 @@ fn with_usage(width: u16) -> Fixture {
 
 /// A heartbeat from a supervisor at `version` that has read `latest`.
 fn supervisor(f: &mut Fixture, version: &str, latest: &str) {
+    supervisor_at(f, version, latest, t0());
+}
+
+/// The same heartbeat, read `now` — 30 seconds after it or later, it is stale.
+fn supervisor_at(f: &mut Fixture, version: &str, latest: &str, now: time::OffsetDateTime) {
     let daemon = DaemonSnapshot {
         pid: 1,
         version: version.into(),
@@ -68,7 +73,7 @@ fn supervisor(f: &mut Fixture, version: &str, latest: &str) {
         tab_roots: HashSet::new(),
         parents: Default::default(),
         daemon: Some(Box::new(daemon)),
-        now: t0(),
+        now,
     });
 }
 
@@ -171,4 +176,82 @@ fn only_the_list_has_it() {
     assert_ne!(f.app.screen(), &tower_ui::Screen::List);
     assert!(compose(&f.app, 140, 40).header_link.is_none());
     assert!(!matches!(click(&mut f, row, 130), Action::Open(_)));
+}
+
+/// Edge: a heartbeat gone stale — the supervisor stopped — offers nothing,
+/// one second either side of the 30-second line.
+#[test]
+fn a_stale_heartbeat_offers_no_release() {
+    let mut f = with_usage(140);
+    supervisor_at(
+        &mut f,
+        "v0.61.6",
+        "v0.61.7",
+        t0() + time::Duration::seconds(29),
+    );
+    assert!(line(&f, 140, 1).trim_end().ends_with("v0.61.7 available ↗"));
+    supervisor_at(
+        &mut f,
+        "v0.61.6",
+        "v0.61.7",
+        t0() + time::Duration::seconds(30),
+    );
+    assert!(line(&f, 140, 1).trim_end().ends_with(PROJECT));
+    assert_eq!(f.app.newer_release(), None);
+}
+
+/// Properties over every width, for both kinds of link, with and without a
+/// usage line: when drawn, the link ends one cell in from the edge, spans
+/// exactly its text's width, keeps a gap of at least three cells from the
+/// line's own text, and the drawn cells read back as the link (cross check
+/// of the hit against the screen); once it fits at a width it fits at every
+/// wider one (monotonic); and it is never drawn wider than the screen.
+#[test]
+fn the_link_lays_out_consistently_at_every_width() {
+    for usage in [true, false] {
+        for newer in [false, true] {
+            let mut f = if usage { with_usage(400) } else { sized(400) };
+            if newer {
+                supervisor(&mut f, "v0.61.6", "v0.61.7");
+            }
+            let want = if newer {
+                "v0.61.7 available ↗"
+            } else {
+                PROJECT
+            };
+            let want_w = tower_text::width(want);
+            let mut fitted_at = None;
+            for width in 0..=400usize {
+                let Some(hit) = compose(&f.app, width, 40).header_link else {
+                    assert!(fitted_at.is_none(), "fit at {fitted_at:?}, lost at {width}");
+                    continue;
+                };
+                fitted_at.get_or_insert(width);
+                let ctx = format!("usage {usage} newer {newer} width {width}");
+                assert_eq!(hit.row, usize::from(usage), "{ctx}");
+                assert_eq!(hit.cols.end + 1, width, "{ctx}");
+                assert_eq!(hit.cols.len(), want_w, "{ctx}");
+                let text = line(&f, width, hit.row);
+                assert!(tower_text::width(&text) <= width, "{ctx}");
+                // The cells before the hit's end, read off the screen.
+                let mut drawn = String::new();
+                let mut used = 0;
+                for c in text.chars() {
+                    let w = tower_text::width(&c.to_string());
+                    if used + w > hit.cols.end {
+                        break;
+                    }
+                    used += w;
+                    drawn.push(c);
+                }
+                assert!(drawn.ends_with(want), "{ctx}: {text}");
+                let own = drawn[..drawn.len() - want.len()].trim_end();
+                assert!(
+                    tower_text::width(own) + 3 <= hit.cols.start,
+                    "{ctx}: gap lost: {text}"
+                );
+            }
+            assert!(fitted_at.is_some(), "never fit up to 400 (usage {usage})");
+        }
+    }
 }
