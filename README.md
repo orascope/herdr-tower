@@ -14,10 +14,10 @@ not looked at yet**.
 
 > **Requires [Herdr TUI](https://github.com/herdrdev/herdr) 0.9.0 or newer** —
 > the terminal herdr (`herdrdev/herdr`, the `herdr` command). The tower reads the
-> agents from its server; without it the list is empty. The Herdr desktop app
-> ([herdr-app](https://github.com/herdrdev/herdr-app)) and
-> [herdr-core](https://github.com/herdrdev/herdr-core) (`hc`) keep their agents
-> apart from Herdr TUI and are not supported.
+> agents from its server; without it the list is empty. The new native Herdr app
+> ([herdr-app](https://github.com/herdrdev/herdr-app), the `hc` command) runs its
+> agents in [herdr-core](https://github.com/herdrdev/herdr-core), a separate
+> server that does not share agents with Herdr TUI, so it is not supported.
 > One line installs it: `herdr plugin install orascope/herdr-tower`.
 
 > **On tmux instead of herdr?** Use [agentlayer](https://github.com/netwaif/agentlayer)
