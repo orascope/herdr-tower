@@ -361,7 +361,7 @@ fn records_thread(
             branches: worktree_branches(),
             tab_roots: tab_roots.clone(),
             parents: parents.clone(),
-            daemon,
+            daemon: daemon.map(Box::new),
             now,
         });
         if sent.is_err() {

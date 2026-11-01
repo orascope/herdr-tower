@@ -301,6 +301,58 @@ pub fn header_lines(app: &App) -> Vec<Line<'static>> {
     lines
 }
 
+/// Where the project lives, linked from the header's right end.
+pub const REPO_URL: &str = "https://github.com/orascope/herdr-tower";
+
+/// What the header links to: a release newer than the supervisor when there
+/// is one — the tag is `v` and three numbers, safe in a URL — and otherwise
+/// the project's page.
+fn header_link(app: &App) -> (String, String, Style) {
+    match app.newer_release() {
+        Some(tag) => (
+            format!("{tag} available ↗"),
+            format!("{REPO_URL}/releases/tag/{tag}"),
+            theme::help_key(),
+        ),
+        None => (
+            "★ github.com/orascope/herdr-tower ↗".to_string(),
+            REPO_URL.to_string(),
+            theme::help(),
+        ),
+    }
+}
+
+/// Puts the link at the right end of the usage line — the header's last —
+/// or of the first line when there is no usage line, never on Parallax's;
+/// one cell in from the edge, and only when it fits beside what is there
+/// with a gap. Otherwise the line is left alone and nothing can be clicked.
+fn place_header_link(header: &mut [Line<'static>], app: &App, width: usize) -> Option<LinkHit> {
+    const GAP: usize = 3;
+    const MARGIN: usize = 1;
+    let usage_line = app.usage_frame().is_some_and(|f| !f.summary.is_empty());
+    let row = if usage_line {
+        header.len().checked_sub(1)?
+    } else {
+        0
+    };
+    let line = header.get_mut(row)?;
+    let (text, url, style) = header_link(app);
+    let used = crate::text::line_width(line);
+    let link = text_width(&text);
+    let end = width.checked_sub(MARGIN)?;
+    let from = end.checked_sub(link)?;
+    if used + GAP > from {
+        return None;
+    }
+    line.spans.push(Span::raw(" ".repeat(from - used)));
+    line.spans.push(Span::styled(text, style));
+    Some(LinkHit {
+        row,
+        cols: from..end,
+        url,
+    })
+}
+
 /// Cells in each of the machine's meters: as wide as a window's on the usage
 /// line beside them.
 const HOST_METER: usize = 5;
@@ -2236,6 +2288,8 @@ pub struct Composed {
     pub keys: Vec<KeyHit>,
     /// The `u usage` reminder in the header, when it fits on screen.
     pub header_usage: Option<(usize, Range<usize>)>,
+    /// The link at the right end of the header, when it fits on screen.
+    pub header_link: Option<LinkHit>,
     /// The row of the open field, when one is open: a click there focuses
     /// it, which drops its dim hint.
     pub prompt_row: Option<usize>,
@@ -2379,6 +2433,14 @@ pub struct PreviewArea {
     pub sid: Option<SidHit>,
 }
 
+/// A web link drawn on screen: where it is, and the page a click opens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkHit {
+    pub row: usize,
+    pub cols: Range<usize>,
+    pub url: String,
+}
+
 /// The session ID in the preview's heading: where it is, and the whole ID a
 /// click copies — the whole one even when the heading had room only for the
 /// short one.
@@ -2407,7 +2469,7 @@ pub fn compose(app: &App, width: usize, height: usize) -> Composed {
     // The summary lines (models, plan usage) sit on the preview's dark teal as
     // one band, so they end where the table's column names begin without a
     // line of their own between them.
-    let header = header_lines(app);
+    let mut header = header_lines(app);
     if app.screen() == &Screen::List && !app.usage_view() {
         if let Some(line) = header
             .last()
@@ -2418,6 +2480,9 @@ pub fn compose(app: &App, width: usize, height: usize) -> Composed {
                 out.header_usage = Some((header.len() - 1, end - "u usage".len()..end));
             }
         }
+    }
+    if app.screen() == &Screen::List && header.len() <= height {
+        out.header_link = place_header_link(&mut header, app, width);
     }
     let mut head: Vec<Line<'static>> = header.into_iter().map(|l| banded(l, width)).collect();
     head.push(column_header(width));

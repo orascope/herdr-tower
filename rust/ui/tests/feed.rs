@@ -61,6 +61,7 @@ fn write_daemon_tree(
             workspace_order: Vec::new(),
             workspace_display_labels: Default::default(),
             parents,
+            latest_release: String::new(),
             backends: Vec::new(),
         })
         .unwrap();

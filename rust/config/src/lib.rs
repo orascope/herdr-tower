@@ -73,6 +73,11 @@ pub struct Config {
     /// and a person with it has one more thing that waits on them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parallax: Option<bool>,
+    /// Whether the supervisor asks GitHub a few times a day for the newest
+    /// release, so the tower's header can offer it. On unless set; the
+    /// request carries nothing but the user agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_check: Option<bool>,
     /// How much of claude's and codex's five-hour window has to be left
     /// before the tower holds what it sends them: `"25"` (1% steps) or
     /// `"off"` (`"0"` also means off). Unset is [`DEFAULT_USAGE_GUARD`].
@@ -302,6 +307,11 @@ impl Config {
     /// Whether Parallax Browser's handoffs are read and shown.
     pub fn parallax_enabled(&self) -> bool {
         self.parallax.unwrap_or(true)
+    }
+
+    /// Whether the supervisor looks for a newer release.
+    pub fn update_check_enabled(&self) -> bool {
+        self.update_check.unwrap_or(true)
     }
 
     /// Whether the dock workspace carries the usage tab.

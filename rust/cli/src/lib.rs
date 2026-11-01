@@ -39,6 +39,7 @@ pub mod opencodeinit;
 pub mod parallax;
 pub mod pipe;
 pub mod pluginsync;
+pub mod releasecheck;
 pub mod reminder;
 pub mod reportcmd;
 pub mod restorecmd;

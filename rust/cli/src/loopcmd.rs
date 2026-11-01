@@ -678,6 +678,9 @@ fn supervise_logged(
     let parallax = crate::parallax::Refresher::spawn(home.to_path_buf());
     let parallax_store = tower_state::ParallaxStore::new(store.dir());
     let mut parallax_watch = crate::parallax::Watch::default();
+    // The newest release on GitHub, for the tower's header: asked a few times
+    // a day off the pass, like the two above.
+    let releases = crate::releasecheck::Refresher::spawn(version.to_string());
     // codex session IDs its silent hooks never reported (`codexsid`). Idle
     // unless a live codex record has none, and throttled per backend then.
     let mut codex_ids = crate::codexsid::Filler::default();
@@ -869,6 +872,7 @@ fn supervise_logged(
                     now,
                 ),
                 backends: backend_snapshots,
+                latest_release: releases.latest(),
             };
             // Not a reason to skip the pass: nothing below reads daemon.json, and
             // the dock keeper and the idle loops must go on without it.

@@ -485,14 +485,15 @@ fn workspace_order_follows_sidebar_moves_and_survives_a_missing_heartbeat() {
         workspace_order: order,
         workspace_display_labels: Default::default(),
         parents: Default::default(),
+        latest_release: String::new(),
         backends: Vec::new(),
     };
-    let event = |daemon| Event::Records {
+    let event = |daemon: Option<tower_state::DaemonSnapshot>| Event::Records {
         agents: agents.clone(),
         branches: HashMap::new(),
         tab_roots: Default::default(),
         parents: Default::default(),
-        daemon,
+        daemon: daemon.map(Box::new),
         now: t0(),
     };
     f.feed(event(Some(snapshot(vec![
@@ -814,7 +815,7 @@ fn a_fresh_supervisor_heartbeat_records_a_live_herdr_connection() {
             branches: HashMap::new(),
             tab_roots: Default::default(),
             parents: Default::default(),
-            daemon: Some(DaemonSnapshot {
+            daemon: Some(Box::new(DaemonSnapshot {
                 pid: 42,
                 version: "v-daemon".into(),
                 started_at: now,
@@ -825,6 +826,7 @@ fn a_fresh_supervisor_heartbeat_records_a_live_herdr_connection() {
                 workspace_order: Vec::new(),
                 workspace_display_labels: Default::default(),
                 parents: Default::default(),
+                latest_release: String::new(),
                 backends: vec![
                     DaemonBackend {
                         id: String::new(),
@@ -841,7 +843,7 @@ fn a_fresh_supervisor_heartbeat_records_a_live_herdr_connection() {
                         refreshed: false,
                     },
                 ],
-            }),
+            })),
             now,
         }),
         Action::Nothing

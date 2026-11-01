@@ -895,6 +895,7 @@ mod tests {
             workspace_order: Vec::new(),
             workspace_display_labels: Default::default(),
             parents: Default::default(),
+            latest_release: String::new(),
             backends: backends
                 .iter()
                 .map(|(id, connected, refreshed)| tower_state::DaemonBackend {

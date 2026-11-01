@@ -1108,14 +1108,15 @@ fn sidebar_labels_distinguish_unnamed_workspaces_from_names_equal_to_ids() {
         ]
         .into(),
         parents: Default::default(),
+        latest_release: String::new(),
         backends: Vec::new(),
     };
-    let event = |daemon| Event::Records {
+    let event = |daemon: Option<tower_state::DaemonSnapshot>| Event::Records {
         agents: agents.clone(),
         branches: HashMap::new(),
         tab_roots: HashSet::new(),
         parents: Default::default(),
-        daemon,
+        daemon: daemon.map(Box::new),
         now: t0(),
     };
     f.feed(event(Some(daemon)));

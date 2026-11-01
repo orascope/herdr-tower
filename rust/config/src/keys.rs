@@ -133,6 +133,13 @@ pub const KEYS: &[Key] = &[
         about: "show Parallax Browser's handoffs that wait on you, read-only (default true)",
     },
     Key {
+        name: "update_check",
+        kind: Kind::Bool,
+        secret: false,
+        applies: "on the supervisor's next check",
+        about: "ask GitHub a few times a day for a newer release, shown in the tower's header (default true)",
+    },
+    Key {
         name: "usage_guard_5h",
         kind: Kind::PercentOrOff,
         secret: false,
@@ -310,6 +317,7 @@ mod tests {
             usage_tab: Some(true),
             id_labels: Some(true),
             parallax: Some(true),
+            update_check: Some(true),
             usage_guard_5h: Some("25".into()),
             usage_guard_7d: Some("off".into()),
             usage_guard_claude_5h: Some("20".into()),

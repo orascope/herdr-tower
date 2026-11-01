@@ -41,6 +41,12 @@
 - `id_labels` (optional): puts each herdr pane's ID in front of its name
   (`[w2:p1] name`; tabs keep plain names). Default `true`; `false` touches no name
   ([Pane IDs in their names](herdr.md#pane-ids-in-their-names))
+- `update_check` (optional): whether the supervisor asks GitHub's public
+  releases API for the newest tag, every six hours (hourly after a failed
+  request). Default `true`. The tower's header ends in a
+  `★ github.com/orascope/herdr-tower ↗` link — a click opens it in the browser —
+  and in `v… available ↗` once a release newer than the supervisor is out.
+  `false` sends nothing and keeps the plain link
 
 `herdr-tower config` changes these without opening the file:
 
