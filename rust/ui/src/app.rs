@@ -240,6 +240,8 @@ pub enum Action {
         focus: Option<String>,
         seen: Option<String>,
     },
+    /// Open this web page in the person's browser.
+    Open(String),
     /// Ask a saved machine to do something, off the redraw path.
     ///
     /// It is an ssh round trip, and one to a machine that has stopped
@@ -296,8 +298,9 @@ pub enum Event {
         /// Worker pane to the coordinator it works under (`target_key`s), as
         /// the supervisor worked it out.
         parents: BTreeMap<String, String>,
-        /// The resident supervisor heartbeat that produced this store view.
-        daemon: Option<DaemonSnapshot>,
+        /// The resident supervisor heartbeat that produced this store view,
+        /// boxed: it is the bulk of the event, and every other one is small.
+        daemon: Option<Box<DaemonSnapshot>>,
         now: OffsetDateTime,
     },
     Local(LocalInfo),
@@ -518,6 +521,8 @@ pub struct App {
     keys_drawn: Vec<crate::view::KeyHit>,
     /// The clickable `u usage` reminder in the last drawn header.
     header_usage_drawn: Option<(usize, std::ops::Range<usize>)>,
+    /// The link at the header's right end in the last frame drawn.
+    header_link_drawn: Option<crate::view::LinkHit>,
     /// The screen row the open field was drawn on in the last frame, for a
     /// click that focuses it.
     prompt_drawn: Option<usize>,
@@ -668,6 +673,7 @@ impl App {
             local_matched: 0,
             keys_drawn: Vec::new(),
             header_usage_drawn: None,
+            header_link_drawn: None,
             prompt_drawn: None,
             pressed_key: None,
             preview_drawn: None,
@@ -1272,6 +1278,15 @@ impl App {
             .unwrap_or(&self.settings.version)
     }
 
+    /// The newest release, when the supervisor has seen one newer than
+    /// itself; see [`DaemonSnapshot::newer_release`].
+    pub fn newer_release(&self) -> Option<&str> {
+        self.daemon
+            .as_ref()
+            .filter(|snapshot| snapshot.fresh(self.now))
+            .and_then(|snapshot| snapshot.newer_release())
+    }
+
     pub fn backend_count(&self) -> usize {
         self.daemon
             .as_ref()
@@ -1338,7 +1353,7 @@ impl App {
                 self.watching = daemon
                     .as_ref()
                     .is_some_and(|snapshot| snapshot.fresh(now) && snapshot.connected);
-                self.daemon = daemon;
+                self.daemon = daemon.map(|d| *d);
                 self.now = now;
                 Action::Nothing
             }
@@ -1518,6 +1533,7 @@ impl App {
         self.list_top_drawn = frame.list_top;
         self.keys_drawn = frame.keys;
         self.header_usage_drawn = frame.header_usage;
+        self.header_link_drawn = frame.header_link;
         self.prompt_drawn = frame.prompt_row;
         self.preview_drawn = frame.preview_area;
         self.usage_drawn = frame.usage_area;
@@ -1906,6 +1922,15 @@ impl App {
                     .is_some_and(|(hit_row, cols)| *hit_row == row && cols.contains(&col))
             {
                 return self.on_key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::NONE));
+            }
+            if self.screen == Screen::List {
+                if let Some(link) = self
+                    .header_link_drawn
+                    .as_ref()
+                    .filter(|l| l.row == row && l.cols.contains(&col))
+                {
+                    return Action::Open(link.url.clone());
+                }
             }
             if let Some(hit) = self
                 .keys_drawn

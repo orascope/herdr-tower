@@ -28,7 +28,7 @@ pub use schedule_store::{
     Repeat, Schedule, ScheduleStore, ScheduleTarget, When, DEFAULT_SCHEDULE_WAIT_MINUTES,
 };
 mod daemon_store;
-pub use daemon_store::{DaemonBackend, DaemonSnapshot, DaemonStore};
+pub use daemon_store::{release_triple, DaemonBackend, DaemonSnapshot, DaemonStore};
 mod parallax_store;
 pub use parallax_store::{
     parallax_waiting, sort_handoffs, Attention, NotifiedHandoff, ParallaxHandoff, ParallaxSnapshot,

@@ -238,7 +238,43 @@ fn perform(
             remote_async(*request, tower.clone(), feed.notifier());
             Ok(Flow::Continue)
         }
+        Action::Open(url) => {
+            if let Err(e) = open_url(&url) {
+                let _ = feed
+                    .notifier()
+                    .send(Event::Notice(Err(format!("could not open {url}: {e}"))));
+            }
+            Ok(Flow::Continue)
+        }
     }
+}
+
+/// Hands `url` to the system's opener without waiting for the browser: the
+/// tower keeps drawing, and a thread reaps the opener when it exits. A
+/// machine with no opener — a server without a desktop — says so on the
+/// error line, URL included, so it can still be copied.
+fn open_url(url: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    let mut cmd = std::process::Command::new("open");
+    #[cfg(windows)]
+    let mut cmd = {
+        // `start`'s first quoted argument is the window title.
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", "start", ""]);
+        c
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut cmd = std::process::Command::new("xdg-open");
+    let mut child = cmd
+        .arg(url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    let _ = std::thread::Builder::new()
+        .name("open-url".into())
+        .spawn(move || child.wait());
+    Ok(())
 }
 
 /// Hands the terminal over, waits, takes it back. Yields what to report, if the

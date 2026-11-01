@@ -38,6 +38,37 @@ pub struct DaemonSnapshot {
     pub parents: std::collections::BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub backends: Vec<DaemonBackend>,
+    /// The newest release's tag on GitHub (`v0.61.7`), as the supervisor last
+    /// read it: empty before the first answer and with `update_check = false`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub latest_release: String,
+}
+
+impl DaemonSnapshot {
+    /// The newest release, when it is newer than this supervisor. A version
+    /// that is not `v` and three numbers — a build off a branch — is offered
+    /// nothing.
+    pub fn newer_release(&self) -> Option<&str> {
+        let latest = release_triple(&self.latest_release)?;
+        (latest > release_triple(&self.version)?).then_some(self.latest_release.as_str())
+    }
+}
+
+/// `v0.61.6` — or the first word of `v0.61.6 (commit …)` — as three numbers.
+/// A suffix after `-` is dropped: `v0.61.6-dirty` is still 0.61.6.
+pub fn release_triple(version: &str) -> Option<(u64, u64, u64)> {
+    let word = version.split_whitespace().next()?;
+    let core = word.strip_prefix('v')?.split('-').next()?;
+    let mut parts = core.split('.');
+    let mut next = || -> Option<u64> {
+        let part = parts.next()?;
+        if part.is_empty() || !part.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        part.parse().ok()
+    };
+    let triple = (next()?, next()?, next()?);
+    parts.next().is_none().then_some(triple)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,7 +169,49 @@ mod tests {
             workspace_display_labels: Default::default(),
             parents: Default::default(),
             backends,
+            latest_release: String::new(),
         }
+    }
+
+    #[test]
+    fn release_triples() {
+        assert_eq!(release_triple("v0.61.6"), Some((0, 61, 6)));
+        assert_eq!(
+            release_triple("v0.61.6 (commit 3f2b92c, 2026-11-01)"),
+            Some((0, 61, 6))
+        );
+        assert_eq!(release_triple("v1.2.3-dirty"), Some((1, 2, 3)));
+        for bad in [
+            "",
+            "v",
+            "0.61.6",
+            "v0.61",
+            "v0.61.6.1",
+            "v0.x.6",
+            "v0..6",
+            "v+1.2.3",
+            "dev",
+        ] {
+            assert_eq!(release_triple(bad), None, "{bad}");
+        }
+    }
+
+    /// Offered only when strictly newer, compared as numbers, and never to a
+    /// supervisor whose own version cannot be read.
+    #[test]
+    fn a_newer_release_is_offered_only_when_newer() {
+        let at = OffsetDateTime::UNIX_EPOCH;
+        let with = |version: &str, latest: &str| DaemonSnapshot {
+            version: version.into(),
+            latest_release: latest.into(),
+            ..snapshot_with(Vec::new(), at)
+        };
+        assert_eq!(with("v0.61.6", "v0.61.7").newer_release(), Some("v0.61.7"));
+        assert_eq!(with("v0.61.10", "v0.62.0").newer_release(), Some("v0.62.0"));
+        assert_eq!(with("v0.61.10", "v0.61.9").newer_release(), None);
+        assert_eq!(with("v0.61.6", "v0.61.6").newer_release(), None);
+        assert_eq!(with("v0.61.6", "").newer_release(), None);
+        assert_eq!(with("dev", "v0.61.7").newer_release(), None);
     }
 
     fn named(id: &str, connected: bool, refreshed: bool) -> DaemonBackend {
@@ -299,6 +372,7 @@ mod tests {
                 error: String::new(),
                 refreshed: false,
             }],
+            latest_release: "v0.3.0".into(),
         };
         store.write(&snapshot).unwrap();
         assert_eq!(store.read().unwrap(), Some(snapshot.clone()));
@@ -325,6 +399,7 @@ mod tests {
             workspace_display_labels: Default::default(),
             parents: Default::default(),
             backends: Vec::new(),
+            latest_release: String::new(),
         };
         store.write(&snapshot).unwrap();
         let body = fs::read_to_string(dir.path().join(FILE)).unwrap();
