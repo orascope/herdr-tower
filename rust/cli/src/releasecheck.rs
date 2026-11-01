@@ -116,6 +116,56 @@ mod tests {
         assert_eq!(tag_of(body).as_deref(), Some("v0.61.7"));
     }
 
+    /// Round trip: any tag `release_triple` accepts, put in an API answer
+    /// by a real JSON writer beside the fields GitHub sends, comes back
+    /// unchanged; and every tag `tag_of` returns is one `release_triple`
+    /// accepts (cross validation of the two gates).
+    #[test]
+    fn a_tag_survives_the_api_answer() {
+        let mut rng = tower_testrng::Rng::new(0x7461_675f_6f66);
+        for _ in 0..500 {
+            let tag = format!(
+                "v{}.{}.{}",
+                rng.below(1000),
+                rng.below(1000),
+                rng.below(1000)
+            );
+            let body = serde_json::json!({
+                "url": "https://api.github.com/repos/orascope/herdr-tower/releases/1",
+                "tag_name": tag,
+                "name": tag,
+                "draft": false,
+                "prerelease": false,
+                "assets": [{"name": "checksums.txt", "download_count": 4}],
+            })
+            .to_string();
+            let got = tag_of(&body);
+            assert_eq!(got.as_deref(), Some(tag.as_str()));
+            assert!(tower_state::release_triple(got.as_deref().unwrap()).is_some());
+        }
+    }
+
+    /// Edge: the length cap is inclusive at 32, and a suffix the triple
+    /// reader would drop (`-rc1`) is still the tag as GitHub named it.
+    #[test]
+    fn the_length_cap_is_inclusive() {
+        let at_cap = format!("v1.2.{}", "9".repeat(32 - "v1.2.".len()));
+        assert_eq!(at_cap.len(), 32);
+        let over = format!("{at_cap}9");
+        let body = |t: &str| serde_json::json!({ "tag_name": t }).to_string();
+        // Thirty digits overflow u64, so the cap is not what refuses it.
+        assert_eq!(tag_of(&body(&at_cap)), None);
+        let short_at_cap = format!("v1.2.3-{}", "x".repeat(32 - "v1.2.3-".len()));
+        assert_eq!(short_at_cap.len(), 32);
+        assert_eq!(
+            tag_of(&body(&short_at_cap)).as_deref(),
+            Some(short_at_cap.as_str())
+        );
+        assert_eq!(tag_of(&body(&format!("{short_at_cap}x"))), None);
+        assert_eq!(tag_of(&body(&over)), None);
+        assert_eq!(tag_of(&body("v1.2.3-rc1")).as_deref(), Some("v1.2.3-rc1"));
+    }
+
     #[test]
     fn anything_but_a_version_tag_is_refused() {
         for body in [

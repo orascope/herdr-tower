@@ -781,6 +781,7 @@ mod tests {
         assert!(c.dock_keep_enabled(), "on unless turned off");
         assert!(c.parallax_enabled(), "on unless turned off");
         assert!(c.id_labels_enabled(), "on unless turned off");
+        assert!(c.update_check_enabled(), "on unless turned off");
         assert_eq!(c.usage_guard_5h(), Some(25), "the guard holds at 25% left");
         assert_eq!(c.usage_guard_7d(), Some(25));
         assert_eq!(c.notify_url(), None);
@@ -790,9 +791,10 @@ mod tests {
     #[test]
     fn explicit_false_is_honored() {
         let c: Config = serde_json::from_str(
-            r#"{"notify_macos":false,"dock_keep":false,"parallax":false,"id_labels":false}"#,
+            r#"{"notify_macos":false,"dock_keep":false,"parallax":false,"id_labels":false,"update_check":false}"#,
         )
         .unwrap();
+        assert!(!c.update_check_enabled());
         assert!(!c.macos_enabled());
         assert!(!c.dock_keep_enabled());
         assert!(!c.parallax_enabled());
