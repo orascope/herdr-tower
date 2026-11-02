@@ -254,7 +254,7 @@ fn the_list_shows_what_the_tower_is_for() {
         "v-test",
         "◆ wait",
         "✔ done",
-        "── collab-bot",
+        "── ▼ collab-bot",
         "check the handoff doc",
         "TASK",
         "↑↓/jk",
@@ -989,12 +989,12 @@ fn a_rule_opens_every_workspace_including_the_first() {
     ]);
     let v = screen(&f, 120, 40);
     assert!(
-        v.contains("── collab-bot"),
+        v.contains("── ▼ collab-bot"),
         "the first group has a rule:\n{v}"
     );
-    assert!(v.contains("── g "), "and so does the second:\n{v}");
+    assert!(v.contains("── ▼ g ("), "and so does the second:\n{v}");
     assert!(
-        !v.contains("── gemini"),
+        !v.contains("── ▼ gemini"),
         "the vendor is a column now, not a group:\n{v}"
     );
 }
@@ -1051,7 +1051,7 @@ fn a_viewport_that_starts_inside_a_group_repeats_its_rule() {
 
     let v = screen(&f, 120, 24);
     assert!(
-        v.contains("── collab-bot"),
+        v.contains("── ▼ collab-bot"),
         "the rule is still on screen with the cursor 30 rows down:\n{v}"
     );
     assert!(v.contains("↑ "), "and the list really is scrolled:\n{v}");
@@ -1074,7 +1074,7 @@ fn a_dead_record_cannot_name_a_live_group() {
         1,
         "only the live row reaches the view"
     );
-    assert!(v.contains("── [w2]new-name"), "{v}");
+    assert!(v.contains("── ▼ [w2]new-name"), "{v}");
     assert!(!v.contains("old-name"), "{v}");
 }
 
@@ -1127,10 +1127,10 @@ fn sidebar_labels_distinguish_unnamed_workspaces_from_names_equal_to_ids() {
     });
     f.feed(event(None));
     let v = screen(&f, 120, 50);
-    assert!(v.contains("── [w2] "), "{v}");
+    assert!(v.contains("── ▼ [w2] ("), "{v}");
     assert!(!v.contains("[w2]w2"), "{v}");
-    assert!(v.contains("── [w3]w3 "), "{v}");
-    assert!(v.contains("── 🗼 HERDR-TOWER 🗼 "), "{v}");
+    assert!(v.contains("── ▼ [w3]w3 ("), "{v}");
+    assert!(v.contains("── ▼ 🗼 HERDR-TOWER 🗼 ("), "{v}");
     assert!(!v.contains("[w4Z]"), "{v}");
     assert!(v.contains(" ▼ [w2] preview"), "{v}");
 }
@@ -1142,7 +1142,7 @@ fn a_workspaceless_row_gets_a_rule_of_its_own() {
     let mut f = fixture();
     f.records(vec![agent("claude-7", "claude", "", AgentState::Idle)]);
     let v = screen(&f, 120, 40);
-    assert!(v.contains("── (no workspace)"), "{v}");
+    assert!(v.contains("── ▼ (no workspace)"), "{v}");
 }
 
 /// Agent rows form workspace -> tab branches, a tab's panes in herdr's count.
@@ -1182,7 +1182,7 @@ fn rows_form_a_session_tree_under_their_workspace() {
     let lines: Vec<String> = screen(&f, 120, 40).lines().map(str::to_string).collect();
     let rule = lines
         .iter()
-        .position(|l| l.starts_with("── [w2]collab-bot"))
+        .position(|l| l.starts_with("── ▼ [w2]collab-bot"))
         .expect("a rule");
     for l in &lines[rule + 1..rule + 4] {
         let cols: Vec<char> = l.chars().collect();
@@ -1688,9 +1688,9 @@ fn agents_on_saved_machines_are_drawn_under_the_list_and_never_selected() {
     ]));
     let v = screen(&f, 200, 80);
     assert!(v.contains("\n ▼ @buildbox "), "{v}");
-    assert!(v.contains("├─── partitions ──"), "{v}");
+    assert!(v.contains("├─── ▼ partitions ("), "{v}");
     assert!(
-        v.contains("└─── [w7] ──"),
+        v.contains("└─── ▼ [w7] ("),
         "a rule per workspace, the last closing the trunk:\n{v}"
     );
     assert!(v.contains("\n   @db-host-02 · not reachable"), "{v}");
