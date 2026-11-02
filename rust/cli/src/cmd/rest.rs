@@ -62,6 +62,12 @@ pub fn run_daemon(args: &[String]) -> Result<()> {
             if !snapshot.error.is_empty() {
                 tower_cli::outln!("error: {}", snapshot.error)?;
             }
+            if tower_cli::daemoncmd::service_manager_active() == Some(false) {
+                tower_cli::outln!(
+                    "service manager: none — {}",
+                    tower_cli::daemoncmd::unmanaged_advice()
+                )?;
+            }
             // The snapshot is only the latest pass; what led up to it is here.
             tower_cli::outln!(
                 "log: {}",
@@ -780,7 +786,14 @@ pub fn run_doctor(args: &[String]) -> Result<()> {
         Ok(None) => doc_bad("has never reported — herdr-tower daemon install".into()),
         Err(e) => doc_bad(format!("unreadable: {e}")),
     };
-    problems += doc::print_section(&mut out, "resident supervisor", &[daemon])?;
+    let mut supervisor = vec![daemon];
+    if supervisor[0].ok && tower_cli::daemoncmd::service_manager_active() == Some(false) {
+        supervisor.push(doc_bad(format!(
+            "no service manager: nothing restarts it until a tower opens, or after a reboot — {}",
+            tower_cli::daemoncmd::unmanaged_advice()
+        )));
+    }
+    problems += doc::print_section(&mut out, "resident supervisor", &supervisor)?;
 
     writeln!(out)?;
     problems += doc::print_section(&mut out, "remote MCP", &super::mcp::doctor(&home))?;

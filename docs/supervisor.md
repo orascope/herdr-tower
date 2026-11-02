@@ -80,6 +80,18 @@ one silent for longer is taken for hung and restarted. Use
 Herdr connection state, number of managed backends, and last snapshot time.
 `daemon run` is the service entry point, not a command normally run by hand.
 
+A service manager this session cannot reach does not stop anything. On Linux,
+`systemctl --user` is told about `/run/user/<uid>` when the shell was not (`su`
+and some remote sessions never set `XDG_RUNTIME_DIR`). If that still fails —
+no user manager, a container without systemd, a Mac with nobody signed in at the
+screen — `daemon start` runs `daemon run` as a plain process in a session of its
+own, with its output in `daemon.log` and the reason in `supervisor.log`. It does
+the same work, but nothing restarts it until the next tower opens, and nothing
+starts it after a reboot. `daemon status` and `doctor` say so, and how to get the
+service back (`loginctl enable-linger "$USER"` on Linux). A tower opens even if
+neither way works, with the reason on its error line; idle loops and scheduled
+messages then refuse to start, because the supervisor is what runs them.
+
 The snapshot is only the latest pass. What happened before it is in
 `~/.local/state/herdr-tower/supervisor.log`, one timestamped line per event:
 the supervisor starting and why it stopped, a Herdr server connecting, failing

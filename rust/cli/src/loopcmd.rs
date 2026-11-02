@@ -475,18 +475,20 @@ fn control_metadata(pane_id: &str, value: &str) -> Metadata {
 }
 
 pub fn spawn_supervisor(exe: &Path) -> std::io::Result<()> {
-    let status = std::process::Command::new(exe)
-        .args(["daemon", "start"])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(std::io::Error::other(format!(
-            "resident supervisor start exited with {status}"
-        )))
+    tower_os::start_supervisor(exe).map_err(std::io::Error::other)
+}
+
+/// Whether a supervisor holds this state store's lock right now.
+pub fn supervisor_lock_held(state_dir: &Path) -> std::io::Result<bool> {
+    let lock = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(state_dir.join(SUPERVISOR_LOCK))?;
+    match lock.try_lock() {
+        Ok(()) => Ok(false),
+        Err(fs::TryLockError::WouldBlock) => Ok(true),
+        Err(fs::TryLockError::Error(e)) => Err(e),
     }
 }
 

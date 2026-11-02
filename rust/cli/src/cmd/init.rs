@@ -33,14 +33,18 @@ pub fn run_init(args: &[String]) -> Result<()> {
     let bin = self_path();
     let mut out = std::io::stdout().lock();
 
-    tower_cli::daemoncmd::install(
+    // Not the end of `init`: the hooks below work without it, and the first
+    // tower to open starts the supervisor either way (#14).
+    if let Err(e) = tower_cli::daemoncmd::install(
         &mut out,
         &home,
         Path::new(&bin),
         &tower_state::default_dir(),
         config_override()?.as_deref(),
         dry_run,
-    )?;
+    ) {
+        writeln!(out, "  not started as a service: {e}")?;
+    }
     writeln!(out)?;
 
     let _ = out.flush();

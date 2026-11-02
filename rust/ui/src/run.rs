@@ -36,6 +36,18 @@ use crate::view;
 /// How long the loop waits on the keyboard before looking at the feed again.
 const INPUT_POLL: Duration = Duration::from_millis(50);
 
+/// What the screen opens saying, once the supervisor has been asked to start.
+fn startup_notice(notice: Option<String>, started: Result<(), String>) -> Option<String> {
+    let Err(e) = started else {
+        return notice;
+    };
+    let failed = format!("the resident supervisor did not start: {e}");
+    Some(match notice {
+        Some(notice) => format!("{notice} · {failed}"),
+        None => failed,
+    })
+}
+
 /// Runs the control tower against the real backend.
 ///
 /// `usage` is the usage board, drawn under the header and on `u`; the binary
@@ -52,9 +64,11 @@ pub fn main(
     let tower = Arc::new(HerdrTower::from_env());
     // The popup is only a client. Ensure the one state-store-scoped resident
     // supervisor is alive; it owns Herdr synchronization and every idle loop.
-    tower
-        .start_loop_supervisor(&settings.exe)
-        .map_err(std::io::Error::other)?;
+    //
+    // 🚨 Not a reason to stay closed: the list, the keys and the panes all work
+    // without it, and a tower that will not open is the worst place to say why
+    // (#14). Idle loops and scheduled messages ask again when they are set.
+    let notice = startup_notice(notice, tower.start_loop_supervisor(&settings.exe));
 
     let mut app = App::new(store.clone(), tower.clone(), settings.clone());
     // Carried onto the screen rather than printed before it. Anything written to
@@ -431,6 +445,23 @@ fn remote_async(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_supervisor_that_did_not_start_is_said_on_the_screen_and_opens_it() {
+        assert_eq!(startup_notice(None, Ok(())), None);
+        assert_eq!(
+            startup_notice(Some("kept".into()), Ok(())).as_deref(),
+            Some("kept")
+        );
+        assert_eq!(
+            startup_notice(None, Err("no bus".into())).as_deref(),
+            Some("the resident supervisor did not start: no bus")
+        );
+        assert_eq!(
+            startup_notice(Some("kept".into()), Err("no bus".into())).as_deref(),
+            Some("kept · the resident supervisor did not start: no bus")
+        );
+    }
 
     /// The chosen height survives a round trip; automatic is no file at all;
     /// a garbled file reads as automatic rather than stopping the tower.
