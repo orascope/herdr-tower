@@ -187,7 +187,9 @@ through herdr, but without load, loops or schedules.
 A click on a machine's band folds its rows under it: the band stays, still
 counting them, and another click opens them again. The mark
 before the name says which a band is: `▼ @desk` is open, `▶ @desk` is folded,
-and a band with no mark has nothing to fold. Folded
+and a band with no mark has nothing to fold. A workspace's rule folds the same
+way, on this machine and on saved ones, with or without a band above it:
+`── ▼ api (3) ──` is open, `── ▶ api (3) ──` is folded. Folded
 rows are skipped by `j`/`k` and the wheel. The click leaves the selection
 where it is, and the band stays on the row you clicked it on, so neither
 jumps; the next key or click lets the list follow the cursor again. Only a

@@ -1212,9 +1212,9 @@ fn a_third_quick_click_does_not_jump_twice() {
 }
 
 #[test]
-fn a_click_on_a_rule_or_the_header_does_nothing() {
+fn a_click_on_the_header_does_nothing_and_on_a_rule_never_jumps() {
     let mut f = fixture();
-    for row in [0, line_of(&mut f, "── collab-bot")] {
+    for row in [0, line_of(&mut f, "── ▼ collab-bot")] {
         assert_eq!(f.app.on_event(left_click(row)), Action::Nothing);
         assert_eq!(f.app.cursor(), 0, "row {row}");
     }

@@ -690,7 +690,7 @@ fn a_click_on_a_machines_band_folds_its_rows_and_another_opens_them() {
     assert!(v.contains(" ▼ @gpu"), "an open band says it folds:\n{v}");
     click(&mut f, " @gpu");
     let v = screen(&f, 200, 60);
-    assert!(!v.contains("w2:p6") && !v.contains("├─── diskann"), "{v}");
+    assert!(!v.contains("w2:p6") && !v.contains("├─── ▼ diskann"), "{v}");
     assert!(
         v.contains(" ▶ @gpu (2)"),
         "the band says what it holds:\n{v}"
@@ -1107,7 +1107,7 @@ fn a_pane_herdr_does_not_see_as_an_agent_is_a_dim_row_never_selected() {
             && lines[at("w2:p9")].ends_with("not an agent to herdr — under sudo/su?"),
         "{v}"
     );
-    assert!(v.contains("└─── [w3]~"), "its own workspace, last:\n{v}");
+    assert!(v.contains("└─── ▼ [w3]~"), "its own workspace, last:\n{v}");
     assert!(
         lines[at("w3:p1")].ends_with("not an agent to herdr"),
         "no guess without a reason:\n{v}"

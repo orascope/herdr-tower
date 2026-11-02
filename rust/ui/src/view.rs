@@ -668,16 +668,23 @@ pub fn selection_bar(line: &Line<'static>, width: usize) -> Line<'static> {
 ///
 /// The rule reaches the right edge; a repeat count one short of the width
 /// would leave a ragged column down the side of every divider.
-pub fn workspace_divider(session: &str, width: usize) -> Line<'static> {
+///
+/// It folds as a machine's band does, and says so the same way: `▼` while its
+/// rows are open, `▶` while they are folded, with how many there are either way.
+pub fn workspace_divider(session: &str, count: usize, folded: bool, width: usize) -> Line<'static> {
     let name = if session.is_empty() {
         NO_WORKSPACE
     } else {
         session
     };
-    let used = 4 + text_width(name);
+    let mark = if folded { "▶ " } else { "▼ " };
+    let count = format!(" ({count})");
+    let used = 3 + text_width(mark) + text_width(name) + text_width(&count) + 1;
     Line::from(vec![
         Span::styled("── ", theme::header()),
+        Span::styled(mark, theme::title()),
         Span::styled(name.to_string(), theme::title()),
+        Span::styled(count, theme::header()),
         Span::raw(" "),
         Span::styled("─".repeat(width.saturating_sub(used)), theme::header()),
     ])
@@ -802,15 +809,6 @@ fn branch(prefix: &str, line: Line<'static>, width: usize) -> Line<'static> {
     clamp_line(&Line::from(spans), width)
 }
 
-/// The name to put on a group's rule.
-///
-/// The app filters recovery records before they reach the view, so every member
-/// is live and has been refreshed by the scanner. The first member's label is
-/// therefore the current label for the whole group.
-fn group_label(app: &App, start: usize) -> String {
-    workspace_label(app, &app.agents()[start])
-}
-
 /// Prefer the observed sidebar label, including an unnamed workspace's `[wX]`.
 /// Older heartbeats fall back to the semantic name and stable workspace ID.
 fn workspace_label(app: &App, agent: &Agent) -> String {
@@ -900,8 +898,8 @@ pub struct RowLines {
     /// For each line, the saved machine's agent it draws, as an index into
     /// [`App::remote_agents`] — what a click there selects.
     pub remote_of: Vec<Option<usize>>,
-    /// For each line, the machine whose band it is — what a click there
-    /// folds or opens.
+    /// For each line, the machine whose band it is, or the workspace whose
+    /// rule it is as its fold key — what a click there folds or opens.
     pub band_of: Vec<Option<String>>,
     /// The band just clicked, as its line and the list row it was clicked
     /// on: the list is held there instead of around the cursor, so a fold
@@ -935,35 +933,49 @@ pub fn rows(app: &App, width: usize) -> RowLines {
     // `@local` first — and its workspaces hang off it. Without one there is
     // only this machine, and the list is drawn as it always was.
     let rooted = has_remote_rows(app);
-    let last_group = app.agents().last().map(tower_state::group_key);
+    let listed = app.local_listed();
+    let last_group = listed.last().map(tower_state::group_key);
     let local = crate::app::LOCAL_MACHINE;
-    let folded = app.is_folded(local);
-    if rooted && (!app.agents().is_empty() || folded && app.local_matched() > 0) {
+    if rooted && app.local_matched() > 0 {
         lines.push(machine_root(&local_band(app), band_name_width(app), width));
         heading_of.push(0);
         agent_of.push(None);
         remote_of.push(None);
         band_of.push(Some(local.to_string()));
     }
-    for (i, a) in app.agents().iter().enumerate() {
+    // The rows of a folded workspace are not among `app.agents()`, so this
+    // walks what the rules come from and counts what is drawn.
+    let mut next_agent = 0usize;
+    for (at, a) in listed.iter().enumerate() {
         let in_last = Some(tower_state::group_key(a)) == last_group;
-        if i == 0 || tower_state::group_key(&app.agents()[i - 1]) != tower_state::group_key(a) {
+        if at == 0 || tower_state::group_key(&listed[at - 1]) != tower_state::group_key(a) {
             head = lines.len();
-            let label = group_label(app, i);
+            let key = crate::app::local_workspace_fold_key(a);
+            let label = workspace_label(app, a);
+            let count = listed[at..]
+                .iter()
+                .take_while(|b| same_workspace(a, b))
+                .count();
+            let folded = app.is_folded(&key);
             lines.push(if rooted {
                 branch(
                     if in_last { "└─" } else { "├─" },
-                    workspace_divider(&label, width.saturating_sub(2)),
+                    workspace_divider(&label, count, folded, width.saturating_sub(2)),
                     width,
                 )
             } else {
-                workspace_divider(&label, width)
+                workspace_divider(&label, count, folded, width)
             });
             heading_of.push(head);
             agent_of.push(None);
             remote_of.push(None);
-            band_of.push(None);
+            band_of.push(Some(key));
         }
+        if app.is_folded(&crate::app::local_workspace_fold_key(a)) {
+            continue;
+        }
+        let i = next_agent;
+        next_agent += 1;
         let window = |a: &Agent| a.pane.window;
         let line = row_with_gutter(app, a, tree_gutter(app.agents(), i, &window), width);
         let line = if rooted {
@@ -1132,8 +1144,9 @@ fn remote_row(a: &crate::RemoteAgent, gutter: &str, width: usize, stale: bool) -
 /// listed as any hang under their workspace too, dim and never selected.
 ///
 /// A machine's band is a section of its own and comes with the machine's
-/// label, for the click on it; a workspace's section has none. A folded
-/// machine is its band alone, saying how many rows it holds.
+/// label, for the click on it; a workspace's section comes with its fold key.
+/// A folded machine is its band alone, and a folded workspace its rule alone,
+/// each saying how many rows it holds.
 #[allow(clippy::type_complexity)]
 fn remote_sections(
     app: &App,
@@ -1202,15 +1215,21 @@ fn remote_sections(
         let n_groups = groups.len();
         for (g, (ws, members, panes)) in groups.into_iter().enumerate() {
             let last = g + 1 == n_groups;
+            let rows = members.len() + panes.len();
+            let key = crate::app::workspace_fold_key(&m.label, ws);
+            let folded_workspace = app.is_folded(&key);
             let mut lines = vec![(
                 branch(
                     if last { "└─" } else { "├─" },
-                    workspace_divider(ws, width.saturating_sub(2)),
+                    workspace_divider(ws, rows, folded_workspace, width.saturating_sub(2)),
                     width,
                 ),
                 None,
             )];
-            let rows = members.len() + panes.len();
+            if folded_workspace {
+                sections.push((Some(key), lines));
+                continue;
+            }
             let gutter = |i: usize| {
                 if i + 1 == rows {
                     "└──── "
@@ -1229,7 +1248,7 @@ fn remote_sections(
                 let row = unseen_row(p, gutter(first_pane + i), width);
                 lines.push((branch(trunk, row, width), None));
             }
-            sections.push((None, lines));
+            sections.push((Some(key), lines));
         }
     }
     sections
@@ -2006,9 +2025,11 @@ const FILTER_LABEL: &str = "filter / ";
 /// said `0 of 18` over the one row it was showing.
 fn filter_count(app: &App) -> String {
     let remote_total: usize = app.remote().iter().map(|m| m.agents.len()).sum();
+    // Matched, folded or not: folding a row away does not filter it out.
+    let matched_remote: usize = app.remote_shown().iter().map(|(_, a)| a.len()).sum();
     format!(
         "{} of {}",
-        app.agents().len() + app.remote_agents().len(),
+        app.local_matched() + matched_remote,
         app.all_agents().len() + remote_total
     )
 }

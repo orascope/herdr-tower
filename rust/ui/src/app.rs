@@ -511,8 +511,13 @@ pub struct App {
     /// the next key or click; see [`App::band_anchor`].
     band_anchor: Option<(String, usize)>,
     /// The machines whose rows are folded under their band, by label;
-    /// [`LOCAL_MACHINE`] for this one. See [`App::toggle_fold`].
+    /// [`LOCAL_MACHINE`] for this one. The workspaces folded under their rule
+    /// are here too, by [`workspace_fold_key`]. See [`App::toggle_fold`].
     folded: HashSet<String>,
+    /// The local agents the filter leaves, in list order, folded workspaces
+    /// included: what the rules are drawn from. Empty while `@local` is
+    /// folded. [`Self::agents`] is the same list without the folded rows.
+    local_listed: Vec<Agent>,
     /// How many local agents the filter leaves, folded or not: the count a
     /// folded `@local` band shows.
     local_matched: usize,
@@ -670,6 +675,7 @@ impl App {
             list_top_drawn: None,
             band_anchor: None,
             folded: HashSet::new(),
+            local_listed: Vec::new(),
             local_matched: 0,
             keys_drawn: Vec::new(),
             header_usage_drawn: None,
@@ -763,6 +769,7 @@ impl App {
             .into_iter()
             .filter(|(m, _)| !self.is_folded(&m.label))
             .flat_map(|(m, agents)| agents.into_iter().map(move |a| (m, a)))
+            .filter(|(m, a)| !self.is_folded(&workspace_fold_key(&m.label, &a.workspace)))
             .collect()
     }
 
@@ -779,12 +786,30 @@ impl App {
         self.local_matched
     }
 
-    /// Folds `label`'s rows under its band, or opens them again. The
+    /// The local agents the filter leaves, the ones in folded workspaces
+    /// included: what the list draws its rules from. Nothing while `@local`
+    /// is folded.
+    pub fn local_listed(&self) -> &[Agent] {
+        &self.local_listed
+    }
+
+    /// Folds `label`'s rows under its band or rule, or opens them again:
+    /// a machine's label, or a workspace's [`workspace_fold_key`]. The
     /// selection stays on the agent it was on while that one is still drawn;
     /// one folded away goes beside the band: the row after it, or the one
     /// before when nothing follows. Where the list is drawn is the click's
     /// business ([`App::band_anchor`]), not the selection's.
     pub fn toggle_fold(&mut self, label: &str) {
+        let target = label.split_once(WORKSPACE_FOLD_SEPARATOR);
+        let local_target =
+            label == LOCAL_MACHINE || target.is_some_and(|(machine, _)| machine == LOCAL_MACHINE);
+        // Where a local workspace starts: the row after its rule once its own
+        // rows are gone, the cursor's index meaning another row by then.
+        let local_start = self
+            .agents
+            .iter()
+            .position(|a| local_workspace_fold_key(a) == label);
+        let selected_id = self.selected().map(|a| a.id.clone());
         let remote_was = self
             .selected_remote()
             .map(|(m, a)| (m.label.clone(), a.id.clone()));
@@ -803,20 +828,42 @@ impl App {
                 return;
             }
         } else if local_was && !self.agents.is_empty() {
+            let gone = selected_id.is_some_and(|id| !self.agents.iter().any(|a| a.id == id));
+            if let Some(start) = local_start.filter(|_| gone) {
+                self.cursor = start.min(self.agents.len() - 1);
+            }
             return;
         }
         let n = remote.len();
         // The rows drawn before `label`'s band among the machines: where the
         // rows after it start now that its own are folded.
-        let before: usize = if label == LOCAL_MACHINE {
+        let before: usize = if local_target {
             0
         } else {
-            self.remote_shown()
+            let machine = target.map_or(label, |(machine, _)| machine);
+            let drawn = |m: &crate::RemoteMachine, a: &crate::RemoteAgent| {
+                !self.is_folded(&m.label)
+                    && !self.is_folded(&workspace_fold_key(&m.label, &a.workspace))
+            };
+            let shown = self.remote_shown();
+            let earlier: usize = shown
                 .iter()
-                .take_while(|(m, _)| m.label != label)
-                .filter(|(m, _)| !self.is_folded(&m.label))
-                .map(|(_, agents)| agents.len())
-                .sum()
+                .take_while(|(m, _)| m.label != machine)
+                .map(|(m, agents)| agents.iter().filter(|a| drawn(m, a)).count())
+                .sum();
+            let within = target.map_or(0, |(_, workspace)| {
+                shown
+                    .iter()
+                    .find(|(m, _)| m.label == machine)
+                    .map_or(0, |(m, agents)| {
+                        agents
+                            .iter()
+                            .take_while(|a| a.workspace != workspace)
+                            .filter(|a| drawn(m, a))
+                            .count()
+                    })
+            });
+            earlier + within
         };
         if before < n {
             self.remote_mode = true;
@@ -877,8 +924,8 @@ impl App {
             KeyCode::Char('k') | KeyCode::Up => {
                 if self.remote_cursor > 0 {
                     self.remote_cursor -= 1;
-                } else if !self.is_folded(LOCAL_MACHINE) {
-                    // With `@local` folded there is no local row to go up into.
+                } else if !self.agents.is_empty() {
+                    // With every local row folded there is none to go up into.
                     self.leave_remote();
                 }
             }
@@ -1469,11 +1516,17 @@ impl App {
             .cloned()
             .collect();
         self.local_matched = next.len();
-        let next = if self.is_folded(LOCAL_MACHINE) {
+        self.local_listed = if self.is_folded(LOCAL_MACHINE) {
             Vec::new()
         } else {
             next
         };
+        let next: Vec<Agent> = self
+            .local_listed
+            .iter()
+            .filter(|a| !self.is_folded(&local_workspace_fold_key(a)))
+            .cloned()
+            .collect();
         self.reseat_cursor(&next);
         self.agents = next;
     }
@@ -1990,8 +2043,9 @@ impl App {
                         return Action::Nothing;
                     }
                 }
-                // A machine's band folds its rows under it, or opens them,
-                // and the list is held with the band where it was clicked.
+                // A machine's band or a workspace's rule folds its rows under
+                // it, or opens them, and the list is held with it where it
+                // was clicked.
                 self.band_anchor = None;
                 if let Some(label) = self.drawn_bands.get(row).cloned().flatten() {
                     self.notice.clear();
@@ -2860,6 +2914,27 @@ fn coordinators(agents: &[Agent], parents: &BTreeMap<String, String>) -> HashMap
 
 fn idle_label(duration: Duration) -> String {
     format!("{}m", duration.as_secs() / 60)
+}
+
+/// Between a machine and a workspace in a [`workspace_fold_key`]: a character
+/// neither a machine's label nor a workspace's name holds.
+const WORKSPACE_FOLD_SEPARATOR: char = '\u{1f}';
+
+/// What [`App::toggle_fold`] and [`App::is_folded`] call a workspace: the
+/// machine's too, as two machines can have a workspace of one name.
+pub fn workspace_fold_key(machine: &str, workspace: &str) -> String {
+    format!("{machine}{WORKSPACE_FOLD_SEPARATOR}{workspace}")
+}
+
+/// A local agent's workspace as a fold key, by its ID when it has one: a
+/// rename keeps it folded, and two workspaces of one name fold apart.
+pub fn local_workspace_fold_key(agent: &Agent) -> String {
+    let workspace = if agent.pane.workspace_id.is_empty() {
+        &agent.pane.session
+    } else {
+        &agent.pane.workspace_id
+    };
+    workspace_fold_key(LOCAL_MACHINE, workspace)
 }
 
 /// Orders the list as herdr's sidebar does: workspace, tab, then pane in

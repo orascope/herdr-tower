@@ -32,7 +32,8 @@ with working, idle and done states, task titles and usage information](docs/imag
 
 Rows follow herdr's sidebar order — machine, workspace, tab, pane. Each machine
 heads its rows with a band — `▼ @desk (6)  cpu … mem … · Ubuntu 26.04 amd64
-(herdr-tower v…)` — that folds them away on a click.
+(herdr-tower v…)` — that folds them away on a click. A workspace's rule folds
+the same way, with or without a saved machine.
 
 **A click on `🗼 HERDR-TOWER 🗼` in herdr's sidebar opens the tower** — a
 workspace of its own that the resident supervisor keeps (see
