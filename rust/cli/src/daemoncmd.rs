@@ -57,9 +57,6 @@ pub fn start(
     config: Option<&Path>,
 ) -> std::io::Result<()> {
     let service = service_path(home);
-    if !service.is_file() {
-        return install(out, home, exe, state_dir, config, false);
-    }
     // An existing definition is not necessarily the right one. `init` may have
     // installed the service before a config was chosen, and both launchd and
     // systemd would then go on starting the old definition — the supervisor
@@ -98,7 +95,26 @@ pub fn start(
     // does not read as a difference from the absolute one already installed.
     let absolute_state = absolute_state_dir(state_dir)?;
     let state_dir = absolute_state.as_path();
-    if definition_differs(&service, home, exe, state_dir, effective) {
+    // 🚨 Every tower runs this before it opens, so a service manager this
+    // session cannot reach must not end here: a shell from `su`, a container
+    // with no systemd, a Mac with nobody signed in at the screen (#14). What
+    // the service manager adds is being restarted and started at login, and
+    // the supervisor works without both.
+    match start_service(out, home, &service, exe, state_dir, effective) {
+        Ok(()) => Ok(()),
+        Err(reason) => start_unmanaged(out, home, exe, state_dir, effective, reason),
+    }
+}
+
+fn start_service(
+    out: &mut impl Write,
+    home: &Path,
+    service: &Path,
+    exe: &Path,
+    state_dir: &Path,
+    effective: Option<&Path>,
+) -> std::io::Result<()> {
+    if !service.is_file() || definition_differs(service, home, exe, state_dir, effective) {
         return install(out, home, exe, state_dir, effective, false);
     }
     // Running, not fresh: every tower, `loop start` and `schedule add` calls
@@ -131,25 +147,234 @@ pub fn start(
             run(Command::new("launchctl").args(["kickstart", "-k", &target]))?;
         }
         "linux" => {
-            let active = Command::new("systemctl")
-                .args(["--user", "is-active", "--quiet", "herdr-tower.service"])
-                .status()?
-                .success();
+            let active = systemd_unit_active()?;
             if running && active {
                 return writeln!(out, "resident supervisor already running");
             }
             let action = if active { "restart" } else { "start" };
-            run(Command::new("systemctl").args(["--user", action, "herdr-tower.service"]))?;
+            run_systemctl(&[action, "herdr-tower.service"])?;
         }
         "windows" => {
             if running {
                 return writeln!(out, "resident supervisor already running");
             }
-            windows::restart(state_dir, &service)?;
+            windows::restart(state_dir, service)?;
         }
         _ => unreachable!("start follows service_path on a supported OS"),
     }
     writeln!(out, "resident supervisor started")
+}
+
+/// Starts the supervisor as a plain process of this user, for when the service
+/// manager could not. `reason` is why, and is what comes back if this fails too.
+///
+/// Windows has no service manager to fall back from: what failed there is
+/// already this.
+fn start_unmanaged(
+    out: &mut impl Write,
+    home: &Path,
+    exe: &Path,
+    state_dir: &Path,
+    config: Option<&Path>,
+    reason: std::io::Error,
+) -> std::io::Result<()> {
+    if std::env::consts::OS == "windows" {
+        return Err(reason);
+    }
+    let unmanaged = || -> std::io::Result<bool> {
+        fs::create_dir_all(state_dir)?;
+        // The lock, not the snapshot: one started a moment ago holds it before
+        // it has reported anything, and `daemon run` waits for the lock rather
+        // than giving up, so another start would sit there for its whole life.
+        if crate::loopcmd::supervisor_lock_held(state_dir)? {
+            let hung = DaemonStore::new(state_dir)
+                .read()
+                .ok()
+                .flatten()
+                .filter(|snapshot| {
+                    tower_os::pid_alive(snapshot.pid)
+                        && !snapshot.running(OffsetDateTime::now_utc(), tower_os::pid_alive)
+                });
+            let Some(hung) = hung else {
+                return Ok(false);
+            };
+            // The one that takes its place waits on the lock until it is gone.
+            let _ = tower_os::kill(hung.pid);
+        }
+        let vars: Vec<_> = std::env::vars_os().map(|(name, _)| name).collect();
+        spawn_detached(&mut unmanaged_command(home, exe, state_dir, config, &vars))?;
+        Ok(true)
+    };
+    match unmanaged() {
+        Ok(true) => {
+            crate::supervisorlog::Log::open(state_dir)
+                .line(&format!("started without a service manager: {reason}"));
+            writeln!(
+                out,
+                "resident supervisor started without a service manager: {reason}"
+            )
+        }
+        Ok(false) => writeln!(out, "resident supervisor already running"),
+        Err(e) => Err(std::io::Error::other(format!(
+            "{reason}; and it could not start without a service manager: {e}"
+        ))),
+    }
+}
+
+/// `daemon run` with the environment a service definition would give it.
+///
+/// 🚨 The caller here is a tower in a pane, so what it would otherwise pass on
+/// is that pane's identity: `HERDR_PANE_ID`, `HERDR_SOCKET_PATH`, the dock's
+/// lease. A service never sees those, and a supervisor that did would take one
+/// pane's server and dock for its own. `vars` is the names now set.
+fn unmanaged_command(
+    home: &Path,
+    exe: &Path,
+    state_dir: &Path,
+    config: Option<&Path>,
+    vars: &[std::ffi::OsString],
+) -> Command {
+    let mut command = Command::new(exe);
+    command.args(["daemon", "run"]).current_dir(home);
+    for name in vars {
+        if name.to_string_lossy().starts_with("HERDR_") {
+            command.env_remove(name);
+        }
+    }
+    command
+        .env("HOME", home)
+        .env("HERDR_TOWER_STATE_DIR", state_dir);
+    if let Some(config) = config {
+        command.env("HERDR_TOWER_CONFIG", config);
+    }
+    command
+}
+
+/// Starts `command` in a session of its own, so the terminal it came from can
+/// close, with its output in `daemon.log`.
+///
+/// 🚨 No descriptor of the caller's survives into it. Whoever ran `daemon
+/// start` reads its stderr to the end, and a supervisor holding that pipe would
+/// keep the tower waiting forever.
+#[cfg(unix)]
+fn spawn_detached(command: &mut Command) -> std::io::Result<()> {
+    use std::os::unix::process::CommandExt;
+    let state_dir = command
+        .get_envs()
+        .find(|(name, _)| *name == "HERDR_TOWER_STATE_DIR")
+        .and_then(|(_, value)| value)
+        .map(PathBuf::from)
+        .ok_or_else(|| std::io::Error::other("the state directory is not set"))?;
+    let log = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(state_dir.join("daemon.log"))?;
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(log.try_clone()?)
+        .stderr(log);
+    // SAFETY: setsid(2) is async-signal-safe and touches no process memory.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    command.spawn().map(drop)
+}
+
+#[cfg(not(unix))]
+fn spawn_detached(_command: &mut Command) -> std::io::Result<()> {
+    unreachable!("Windows has no service manager to fall back from")
+}
+
+/// Whether the service manager is what keeps the supervisor alive here, for
+/// the platforms that have one. A supervisor that is running while this says
+/// no came from [`start_unmanaged`].
+pub fn service_manager_active() -> Option<bool> {
+    match std::env::consts::OS {
+        "macos" => Some(
+            Command::new("launchctl")
+                .args(["print", &format!("gui/{}/{}", current_uid(), LABEL)])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|status| status.success()),
+        ),
+        "linux" => Some(systemd_unit_active().unwrap_or(false)),
+        _ => None,
+    }
+}
+
+/// What a person can do about a supervisor running without a service manager.
+pub fn unmanaged_advice() -> &'static str {
+    if std::env::consts::OS == "macos" {
+        "sign in at the screen, then: herdr-tower daemon install"
+    } else {
+        "loginctl enable-linger \"$USER\", then: herdr-tower daemon install"
+    }
+}
+
+/// `systemctl --user`, able to find this user's service manager from a shell
+/// that was not given the way there (#14).
+fn systemctl_user() -> Command {
+    let mut command = Command::new("systemctl");
+    command.arg("--user");
+    if let Some(dir) = missing_runtime_dir(
+        std::env::var_os("XDG_RUNTIME_DIR").as_deref(),
+        current_uid(),
+        |dir| dir.is_dir(),
+    ) {
+        command.env("XDG_RUNTIME_DIR", dir);
+    }
+    command
+}
+
+/// The value `XDG_RUNTIME_DIR` should have had, when it is unset and the
+/// standard directory exists. `su` and some remote sessions never set it, and
+/// without it `systemctl --user` cannot reach a manager that is running.
+fn missing_runtime_dir(
+    current: Option<&std::ffi::OsStr>,
+    uid: impl std::fmt::Display,
+    exists: impl FnOnce(&Path) -> bool,
+) -> Option<PathBuf> {
+    if current.is_some_and(|value| !value.is_empty()) {
+        return None;
+    }
+    let dir = PathBuf::from(format!("/run/user/{uid}"));
+    exists(&dir).then_some(dir)
+}
+
+fn systemd_unit_active() -> std::io::Result<bool> {
+    Ok(systemctl_user()
+        .args(["is-active", "--quiet", "herdr-tower.service"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map_err(|e| std::io::Error::other(with_linger_hint(e)))?
+        .success())
+}
+
+fn run_systemctl(args: &[&str]) -> std::io::Result<()> {
+    run(systemctl_user().args(args)).map_err(|e| std::io::Error::other(with_linger_hint(e)))
+}
+
+/// `systemctl`'s complaint, and what to do about it when it is the one that
+/// means there is no user manager to talk to.
+fn with_linger_hint(error: std::io::Error) -> String {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        return "systemctl was not found".into();
+    }
+    let said = error.to_string();
+    if said.contains("to bus") || said.contains("user scope bus") {
+        format!(
+            "{said} (no user service manager in this session — loginctl enable-linger \"$USER\")"
+        )
+    } else {
+        said
+    }
 }
 
 pub fn service_path(home: &Path) -> PathBuf {
@@ -363,15 +588,15 @@ fn install_linux(
         return Ok(());
     }
     write_service(&path, body.as_bytes())?;
-    run(Command::new("systemctl").args(["--user", "daemon-reload"]))?;
-    run(Command::new("systemctl").args(["--user", "enable", "herdr-tower.service"]))?;
+    run_systemctl(&["daemon-reload"])?;
+    run_systemctl(&["enable", "herdr-tower.service"])?;
     // `restart`, not `enable --now`. `--now` starts a unit that is inactive
     // and does nothing to one that is already running, so reinstalling over a
     // live supervisor would leave it on the old executable and the old
     // environment — including the stale config path this rewrite exists to
     // replace. `restart` covers both cases; macOS gets the same effect from
     // `kickstart -k`.
-    run(Command::new("systemctl").args(["--user", "restart", "herdr-tower.service"]))?;
+    run_systemctl(&["restart", "herdr-tower.service"])?;
     writeln!(out, "  installed and started")
 }
 
@@ -853,6 +1078,166 @@ mod tests {
   <key>StartInterval</key><integer>300</integer>
 </dict>
 </plist>"#;
+
+    #[test]
+    fn a_missing_runtime_dir_is_filled_in_only_when_it_exists() {
+        let any = |_: &Path| true;
+        assert_eq!(
+            missing_runtime_dir(None, 1002, any),
+            Some(PathBuf::from("/run/user/1002"))
+        );
+        assert_eq!(
+            missing_runtime_dir(Some(std::ffi::OsStr::new("")), 1002, any),
+            Some(PathBuf::from("/run/user/1002")),
+            "empty is unset to systemctl too"
+        );
+        assert_eq!(
+            missing_runtime_dir(Some(std::ffi::OsStr::new("/x")), 1002, any),
+            None,
+            "one that is set is the session's own"
+        );
+        assert_eq!(missing_runtime_dir(None, 1002, |_| false), None);
+    }
+
+    #[test]
+    fn the_bus_failure_says_what_to_do_and_others_are_left_alone() {
+        let bus = "Failed to connect to user scope bus via local transport: not defined";
+        assert!(with_linger_hint(std::io::Error::other(bus)).contains("enable-linger"));
+        let old = "Failed to connect to bus: No such file or directory";
+        assert!(with_linger_hint(std::io::Error::other(old)).contains("enable-linger"));
+        assert_eq!(
+            with_linger_hint(std::io::ErrorKind::NotFound.into()),
+            "systemctl was not found"
+        );
+        let other = "Unit herdr-tower.service has a bad setting";
+        assert_eq!(with_linger_hint(std::io::Error::other(other)), other);
+    }
+
+    #[test]
+    fn the_unmanaged_supervisor_does_not_inherit_the_pane_it_was_started_from() {
+        let vars = [
+            "HERDR_PANE_ID",
+            "HERDR_SOCKET_PATH",
+            "HERDR_TOWER_DOCK_LEASE",
+            "HERDR_TOWER_STATE_DIR",
+            "PATH",
+        ]
+        .map(std::ffi::OsString::from);
+        let command = unmanaged_command(
+            Path::new("/home/me"),
+            Path::new("/bin/herdr-tower"),
+            Path::new("/state"),
+            Some(Path::new("/cfg.toml")),
+            &vars,
+        );
+        let envs: std::collections::HashMap<_, _> = command
+            .get_envs()
+            .map(|(k, v)| (k.to_string_lossy().into_owned(), v.map(PathBuf::from)))
+            .collect();
+        assert_eq!(envs["HERDR_PANE_ID"], None);
+        assert_eq!(envs["HERDR_SOCKET_PATH"], None);
+        assert_eq!(envs["HERDR_TOWER_DOCK_LEASE"], None);
+        assert_eq!(envs["HERDR_TOWER_STATE_DIR"], Some(PathBuf::from("/state")));
+        assert_eq!(envs["HERDR_TOWER_CONFIG"], Some(PathBuf::from("/cfg.toml")));
+        assert_eq!(envs["HOME"], Some(PathBuf::from("/home/me")));
+        assert!(!envs.contains_key("PATH"), "PATH is left as it is");
+        let args: Vec<_> = command.get_args().collect();
+        assert_eq!(args, ["daemon", "run"]);
+        assert_eq!(command.get_current_dir(), Some(Path::new("/home/me")));
+    }
+
+    /// A stand-in supervisor: says it ran, with what, and exits.
+    #[cfg(unix)]
+    fn stand_in(dir: &Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let exe = dir.join("stand-in");
+        fs::write(
+            &exe,
+            "#!/bin/sh\nprintf '%s %s|%s\\n' \"$1\" \"$2\" \"$HERDR_PANE_ID\" >> \"$HERDR_TOWER_STATE_DIR/ran\"\n",
+        )
+        .unwrap();
+        fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).unwrap();
+        exe
+    }
+
+    #[cfg(unix)]
+    fn wait_for(path: &Path) -> String {
+        for _ in 0..500 {
+            if let Ok(text) = fs::read_to_string(path) {
+                if text.ends_with('\n') {
+                    return text;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("{} never appeared", path.display());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_service_manager_that_cannot_be_reached_still_gets_a_supervisor() {
+        let d = tempfile::tempdir().unwrap();
+        let state = d.path().join("state");
+        let mut out = Vec::new();
+        start_unmanaged(
+            &mut out,
+            d.path(),
+            &stand_in(d.path()),
+            &state,
+            None,
+            std::io::Error::other("no bus"),
+        )
+        .unwrap();
+        assert_eq!(wait_for(&state.join("ran")), "daemon run|\n");
+        let said = String::from_utf8(out).unwrap();
+        assert!(said.contains("without a service manager: no bus"), "{said}");
+        let log = fs::read_to_string(state.join(crate::supervisorlog::LOG_FILE)).unwrap();
+        assert!(log.contains("no bus"), "{log}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_supervisor_holding_the_lock_is_not_given_a_second_one_to_wait_behind_it() {
+        let d = tempfile::tempdir().unwrap();
+        let state = d.path().join("state");
+        fs::create_dir_all(&state).unwrap();
+        let lock = fs::File::create(state.join("loop-supervisor.lock")).unwrap();
+        lock.lock().unwrap();
+        let mut out = Vec::new();
+        start_unmanaged(
+            &mut out,
+            d.path(),
+            &stand_in(d.path()),
+            &state,
+            None,
+            std::io::Error::other("no bus"),
+        )
+        .unwrap();
+        assert!(String::from_utf8(out).unwrap().contains("already running"));
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert!(!state.join("ran").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn both_reasons_come_back_when_neither_way_starts_it() {
+        let d = tempfile::tempdir().unwrap();
+        let mut out = Vec::new();
+        let error = start_unmanaged(
+            &mut out,
+            d.path(),
+            &d.path().join("no-such-binary"),
+            &d.path().join("state"),
+            None,
+            std::io::Error::other("no bus"),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.starts_with("no bus; and it could not start"),
+            "{error}"
+        );
+    }
 
     #[test]
     fn only_the_plain_card_job_is_the_supervisors_to_retire() {

@@ -282,17 +282,7 @@ impl Tower for HerdrTower {
     }
 
     fn start_loop_supervisor(&self, exe: &str) -> Result<(), String> {
-        let status = std::process::Command::new(exe)
-            .args(["daemon", "start"])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map_err(|e| e.to_string())?;
-        status
-            .success()
-            .then_some(())
-            .ok_or_else(|| format!("resident supervisor start exited with {status}"))
+        tower_os::start_supervisor(std::path::Path::new(exe))
     }
 
     fn is_git_repo(&self, dir: &str) -> bool {

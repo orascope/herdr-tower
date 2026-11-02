@@ -342,6 +342,41 @@ pub fn stdout_size() -> Option<(usize, usize)> {
     }
 }
 
+/// Asks `exe` to start the resident supervisor, and comes back with what it
+/// said if it could not.
+///
+/// 🚨 Its stderr is read, because `exit status: 1` is all a person gets
+/// otherwise (#14). It is read to the end, so whatever `daemon start` leaves
+/// running must not hold it — see `daemoncmd::spawn_detached`.
+pub fn start_supervisor(exe: &Path) -> Result<(), String> {
+    let output = std::process::Command::new(exe)
+        .args(["daemon", "start"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        return Ok(());
+    }
+    Err(start_failure(
+        &String::from_utf8_lossy(&output.stderr),
+        &output.status.to_string(),
+    ))
+}
+
+/// What `daemon start` said without the name `main` puts in front of it, or how
+/// it ended if it said nothing.
+fn start_failure(stderr: &str, status: &str) -> String {
+    let said = stderr.trim();
+    let said = said.strip_prefix("herdr-tower: ").unwrap_or(said);
+    if said.is_empty() {
+        format!("resident supervisor start exited with {status}")
+    } else {
+        said.to_string()
+    }
+}
+
 /// Whether a process with this pid exists.
 pub fn pid_alive(pid: u32) -> bool {
     if pid == 0 {
@@ -674,6 +709,43 @@ pub fn ensure_home() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_supervisor_start_reports_what_it_said() {
+        assert_eq!(
+            start_failure("herdr-tower: Failed to connect to bus\n", "exit status: 1"),
+            "Failed to connect to bus"
+        );
+        assert_eq!(start_failure("other\n", "exit status: 1"), "other");
+        assert_eq!(
+            start_failure(" \n", "exit status: 1"),
+            "resident supervisor start exited with exit status: 1"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_supervisor_start_reads_the_stderr_of_the_real_process() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("tower-os-start-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("failing");
+        std::fs::write(
+            &exe,
+            "#!/bin/sh\necho \"herdr-tower: $1 $2 failed\" >&2\nexit 1\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(
+            start_supervisor(&exe),
+            Err("daemon start failed".to_string())
+        );
+        let ok = dir.join("fine");
+        std::fs::write(&ok, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&ok, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(start_supervisor(&ok), Ok(()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn a_file_name_is_kept_on_unix_and_escaped_on_windows() {
