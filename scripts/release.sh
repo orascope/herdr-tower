@@ -21,7 +21,8 @@
 #   - macOS arm64 runs and reports <vX.Y.Z> (this Mac is arm64);
 #   - macOS deployment target is 11.0 (arm64);
 #   - both Linux binaries run and report <vX.Y.Z> on RHEL 8.10 (UBI), the
-#     oldest glibc the release promises;
+#     oldest glibc the release promises, x86_64 on HERDR_TOWER_BUILD_HOST_X86_64
+#     (required unless this machine is x86_64: it is never emulated);
 #   - the Windows binary needs no DLL beyond what Windows ships, and — with
 #     HERDR_TOWER_CHECK_HOST_WINDOWS=<ssh target of a Windows machine> —
 #     runs there and reports <vX.Y.Z>. Without that host the run is skipped
@@ -41,6 +42,14 @@ if [ -n "$(git -C "$root" status --porcelain)" ]; then
 fi
 if git -C "$root" rev-parse -q --verify "refs/tags/$version" >/dev/null; then
   echo "tag $version already exists" >&2
+  exit 1
+fi
+
+# x86_64 Linux is built and checked on x86_64 hardware, never emulated on this
+# machine. Refused here, before minutes of building end at that step.
+x86_64_host=${HERDR_TOWER_BUILD_HOST_X86_64:-}
+if [ -z "$x86_64_host" ] && [ "$(uname -m)" != x86_64 ]; then
+  echo "this machine is $(uname -m): set HERDR_TOWER_BUILD_HOST_X86_64=<ssh host> to build and check x86_64 Linux there" >&2
   exit 1
 fi
 
@@ -188,13 +197,24 @@ if [ -n "${HERDR_TOWER_CHECK_HOST_WINDOWS:-}" ]; then
 else
   echo "  --  windows_amd64 not run: set HERDR_TOWER_CHECK_HOST_WINDOWS=<ssh target> to run it on Windows"
 fi
-for arch in amd64 arm64; do
-  reports docker run --rm --name "herdr-tower-verify-ubi8-linux-$arch-$version" \
-    --network host --platform "linux/$arch" \
-    -v "$work/check/linux_$arch":/b:ro redhat/ubi8:8.10 /b/herdr-tower
-done
+# The binary goes to the x86_64 host over stdin, and only its --version comes
+# back: docker's pull progress is on stderr.
+on_x86_64_host() {
+  local bin=$1 flag=$2
+  ssh "$x86_64_host" "T=\$(mktemp -d); trap 'rm -rf \"\$T\"' EXIT; cat > \"\$T/herdr-tower\"; chmod 755 \"\$T\" \"\$T/herdr-tower\"; docker run --rm --name herdr-tower-verify-ubi8-linux-amd64-$version --network host --platform linux/amd64 -v \"\$T\":/b:ro redhat/ubi8:8.10 /b/herdr-tower $flag" < "$bin"
+}
+if [ -n "$x86_64_host" ]; then
+  reports on_x86_64_host "$work/check/linux_amd64/herdr-tower"
+else
+  reports docker run --rm --name "herdr-tower-verify-ubi8-linux-amd64-$version" \
+    --network host --platform linux/amd64 \
+    -v "$work/check/linux_amd64":/b:ro redhat/ubi8:8.10 /b/herdr-tower
+fi
+reports docker run --rm --name "herdr-tower-verify-ubi8-linux-arm64-$version" \
+  --network host --platform linux/arm64 \
+  -v "$work/check/linux_arm64":/b:ro redhat/ubi8:8.10 /b/herdr-tower
 
-step "checking the archives (UBI 8.10 containers on this machine)"
+step "checking the archives (UBI 8.10 containers: arm64 on this machine, amd64 on ${x86_64_host:-this machine})"
 {
   echo "$version $HERDR_TOWER_COMMIT"
   echo "total build time: $((SECONDS - release_started))s"

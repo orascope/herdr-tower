@@ -23,6 +23,7 @@
 # HERDR_TOWER_BUILD_HOST_X86_64 / HERDR_TOWER_BUILD_HOST_AARCH64 to an ssh
 # host. The tracked files are streamed there, built in a temporary directory,
 # and the binary is copied back; nothing is left behind but the named volumes.
+# x86_64 is refused without one on a machine of another architecture.
 set -euo pipefail
 
 out=${1:?usage: scripts/build-linux.sh <out-dir> [aarch64] [x86_64]}
@@ -56,7 +57,15 @@ inner='
 for arch in "${arches[@]}"; do
   case $arch in
     aarch64) platform=linux/arm64; host=${HERDR_TOWER_BUILD_HOST_AARCH64-} ;;
-    x86_64) platform=linux/amd64; host=${HERDR_TOWER_BUILD_HOST_X86_64-} ;;
+    x86_64)
+      platform=linux/amd64
+      host=${HERDR_TOWER_BUILD_HOST_X86_64-}
+      # Never emulated: on another architecture it needs a real x86_64 machine.
+      if [ -z "$host" ] && [ "$(uname -m)" != x86_64 ]; then
+        echo "this machine is $(uname -m): set HERDR_TOWER_BUILD_HOST_X86_64=<ssh host> to build x86_64 there" >&2
+        exit 1
+      fi
+      ;;
     *) echo "unknown arch: $arch" >&2; exit 2 ;;
   esac
   name="herdr-tower-build-$arch-${HERDR_TOWER_VERSION:-dev}"

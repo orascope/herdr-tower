@@ -84,7 +84,9 @@ Written down honestly. These need trying on real hardware.
   (`herdr-tower-build-<arch>-<version>`,
   `herdr-tower-verify-ubi8-linux-<arch>-<version>`) and runs with `--network
   host`. `HERDR_TOWER_BUILD_HOST_X86_64` / `_AARCH64` name an ssh host whose
-  docker builds that arch, and `build-info.txt` in the output directory records
+  docker builds that arch. x86_64 is never emulated: on a machine of another
+  architecture both scripts refuse to start without the x86_64 host, and the
+  amd64 RHEL 8.10 check runs on that host too. And `build-info.txt` in the output directory records
   the total build time and each step's.
   `scripts/remote-up.sh <vX.Y.Z> <release-dir> [ssh-target ...]` then installs the
   release on the machines `herdr machine list` knows (or the targets given):
