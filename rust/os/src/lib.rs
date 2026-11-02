@@ -723,26 +723,41 @@ mod tests {
         );
     }
 
+    /// Writes an executable script from a child process.
+    ///
+    /// 🚨 Not with `fs::write` here: a test thread forking at that moment keeps
+    /// the write handle until it execs, and running the script then fails with
+    /// `Text file busy`. A handle this process never opens cannot be inherited.
+    #[cfg(unix)]
+    fn write_script(path: &Path, body: &str) {
+        let status = std::process::Command::new("sh")
+            .args([
+                "-c",
+                "printf '%s' \"$0\" > \"$1\" && chmod 755 \"$1\"",
+                body,
+            ])
+            .arg(path)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_supervisor_start_reads_the_stderr_of_the_real_process() {
-        use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!("tower-os-start-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let exe = dir.join("failing");
-        std::fs::write(
+        write_script(
             &exe,
             "#!/bin/sh\necho \"herdr-tower: $1 $2 failed\" >&2\nexit 1\n",
-        )
-        .unwrap();
-        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        );
         assert_eq!(
             start_supervisor(&exe),
             Err("daemon start failed".to_string())
         );
         let ok = dir.join("fine");
-        std::fs::write(&ok, "#!/bin/sh\nexit 0\n").unwrap();
-        std::fs::set_permissions(&ok, std::fs::Permissions::from_mode(0o755)).unwrap();
+        write_script(&ok, "#!/bin/sh\nexit 0\n");
         assert_eq!(start_supervisor(&ok), Ok(()));
         let _ = std::fs::remove_dir_all(&dir);
     }

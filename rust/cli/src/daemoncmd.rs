@@ -1146,17 +1146,33 @@ mod tests {
         assert_eq!(command.get_current_dir(), Some(Path::new("/home/me")));
     }
 
+    /// Writes an executable script from a child process.
+    ///
+    /// 🚨 Not with `fs::write` here: a test thread forking at that moment keeps
+    /// the write handle until it execs, and running the script then fails with
+    /// `Text file busy`. A handle this process never opens cannot be inherited.
+    #[cfg(unix)]
+    fn write_script(path: &Path, body: &str) {
+        let status = std::process::Command::new("sh")
+            .args([
+                "-c",
+                "printf '%s' \"$0\" > \"$1\" && chmod 755 \"$1\"",
+                body,
+            ])
+            .arg(path)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+
     /// A stand-in supervisor: says it ran, with what, and exits.
     #[cfg(unix)]
     fn stand_in(dir: &Path) -> PathBuf {
-        use std::os::unix::fs::PermissionsExt;
         let exe = dir.join("stand-in");
-        fs::write(
+        write_script(
             &exe,
             "#!/bin/sh\nprintf '%s %s|%s\\n' \"$1\" \"$2\" \"$HERDR_PANE_ID\" >> \"$HERDR_TOWER_STATE_DIR/ran\"\n",
-        )
-        .unwrap();
-        fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).unwrap();
+        );
         exe
     }
 
