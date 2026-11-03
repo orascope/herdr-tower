@@ -210,6 +210,13 @@ pub const KEYS: &[Key] = &[
         about: "host:port on loopback (default 127.0.0.1:8787)",
     },
     Key {
+        name: "mcp.local_listen",
+        kind: Kind::Text,
+        secret: false,
+        applies: MCP_RESTART,
+        about: "host:port on loopback for clients on this machine, never published (default 127.0.0.1:8788)",
+    },
+    Key {
         name: "mcp.redirect_uris",
         kind: Kind::TextList,
         secret: false,
@@ -328,6 +335,7 @@ mod tests {
             mcp: McpConfig {
                 enabled: Some(true),
                 listen: Some("127.0.0.1:1".into()),
+                local_listen: Some("127.0.0.1:2".into()),
                 public_url: Some("https://x".into()),
                 redirect_uris: vec!["https://x/cb".into()],
                 act: Some(true),

@@ -121,6 +121,10 @@ pub struct McpConfig {
     /// `host:port`. Only a loopback address is accepted; see [`McpConfig::listen`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub listen: Option<String>,
+    /// `host:port` of the server for clients on this machine. Only a loopback
+    /// address is accepted; see [`McpConfig::local_listen`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_listen: Option<String>,
     /// The HTTPS URL the tunnel publishes (`https://<mac>.<tailnet>.ts.net`).
     /// The OAuth metadata has to name it. Unset, the supervisor asks Tailscale
     /// for this machine's name.
@@ -140,6 +144,7 @@ pub struct McpConfig {
 
 /// [`McpConfig::listen`] when unset.
 pub const DEFAULT_MCP_LISTEN: &str = "127.0.0.1:8787";
+const DEFAULT_MCP_LOCAL_LISTEN: &str = "127.0.0.1:8788";
 
 /// The callbacks claude.ai and the Claude apps register with.
 pub const DEFAULT_MCP_REDIRECT_URIS: [&str; 2] = [
@@ -172,6 +177,29 @@ impl McpConfig {
         if !addr.ip().is_loopback() {
             return Err(format!(
                 "mcp.listen {raw:?} is not a loopback address — the tunnel is the only way in"
+            ));
+        }
+        Ok(addr)
+    }
+
+    /// Where clients on this machine reach the server while `listen` is
+    /// published through a tunnel. A port of its own because a tunnel's
+    /// requests arrive from loopback too, so only the port can tell them
+    /// apart: nothing is published on this one, and only here may a client
+    /// register a callback on this machine.
+    pub fn local_listen(&self) -> Result<std::net::SocketAddr, String> {
+        let raw = self
+            .local_listen
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(DEFAULT_MCP_LOCAL_LISTEN);
+        let addr: std::net::SocketAddr = raw
+            .parse()
+            .map_err(|_| format!("mcp.local_listen {raw:?} is not host:port"))?;
+        if !addr.ip().is_loopback() {
+            return Err(format!(
+                "mcp.local_listen {raw:?} is not a loopback address"
             ));
         }
         Ok(addr)
@@ -895,6 +923,24 @@ mod tests {
             back, r#"{"dock_keep":false}"#,
             "unset fields stay out of the file"
         );
+    }
+
+    #[test]
+    fn the_local_mcp_server_listens_on_loopback_only_and_apart_from_the_public_one() {
+        let at = |listen: &str| McpConfig {
+            local_listen: Some(listen.into()),
+            ..McpConfig::default()
+        };
+        let default = McpConfig::default();
+        assert_eq!(
+            default.local_listen().unwrap().to_string(),
+            "127.0.0.1:8788"
+        );
+        assert_ne!(default.local_listen().unwrap(), default.listen().unwrap());
+        assert_eq!(at("[::1]:9000").local_listen().unwrap().port(), 9000);
+        assert!(at("0.0.0.0:8788").local_listen().is_err());
+        assert!(at("192.168.0.5:8788").local_listen().is_err());
+        assert!(at("localhost").local_listen().is_err(), "not host:port");
     }
 
     #[test]

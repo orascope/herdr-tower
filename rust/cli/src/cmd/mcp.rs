@@ -138,21 +138,75 @@ fn serve() -> Result<()> {
     }
     let listen = cfg.mcp.listen()?;
     let state_dir = tower_state::default_dir();
-    let settings = http::Settings {
+    let src: Arc<dyn tools::Source> = Arc::new(Tower {
+        home: home()?,
+        state_dir: state_dir.clone(),
+    });
+    // With a public URL, `listen` is what a tunnel forwards to. A client on
+    // this machine gets a port of its own beside it; a port that is taken
+    // ends only this thread.
+    if !local {
+        match cfg.mcp.local_listen() {
+            Ok(addr) => {
+                let settings = local_settings(&cfg, addr, state_dir.clone());
+                let src = src.clone();
+                let started =
+                    std::thread::Builder::new()
+                        .name("local-mcp".into())
+                        .spawn(move || {
+                            if let Err(e) = http::serve(addr, settings, src) {
+                                eprintln!("herdr-tower mcp: not serving on {addr} — {e}");
+                            }
+                        });
+                if let Err(e) = started {
+                    eprintln!("herdr-tower mcp: the local server did not start: {e}");
+                }
+            }
+            Err(e) => eprintln!("herdr-tower mcp: no local server — {e}"),
+        }
+    }
+    let settings = main_settings(&cfg, base, local, state_dir);
+    http::serve(listen, settings, src)?;
+    Ok(())
+}
+
+/// The settings of the server on `mcp.listen`. It takes a callback on this
+/// machine only when it has no public URL: with one, it is what the tunnel
+/// forwards to, and a stranger's request arrives there from loopback as well.
+fn main_settings(
+    cfg: &tower_config::Config,
+    base: String,
+    local: bool,
+    state_dir: std::path::PathBuf,
+) -> http::Settings {
+    http::Settings {
         loopback_callbacks: local,
         base,
         redirect_uris: cfg.mcp.redirect_uris(),
-        state_dir: state_dir.clone(),
+        state_dir,
         act: cfg.mcp.act_enabled(),
         limiter: tower_cli::mcp::limit::Limiter::default(),
         read_deadline: http::READ_DEADLINE,
-    };
-    let src = Arc::new(Tower {
-        home: home()?,
+    }
+}
+
+/// The settings of the server on `mcp.local_listen`: it names itself by its
+/// own address and takes callbacks on this machine and no others. The grants
+/// and every other rule are the main server's, pairing code included.
+fn local_settings(
+    cfg: &tower_config::Config,
+    addr: std::net::SocketAddr,
+    state_dir: std::path::PathBuf,
+) -> http::Settings {
+    http::Settings {
+        loopback_callbacks: true,
+        base: format!("http://{addr}"),
+        redirect_uris: Vec::new(),
         state_dir,
-    });
-    http::serve(listen, settings, src)?;
-    Ok(())
+        act: cfg.mcp.act_enabled(),
+        limiter: tower_cli::mcp::limit::Limiter::default(),
+        read_deadline: http::READ_DEADLINE,
+    }
 }
 
 const PAIR_USAGE: &str = "usage: herdr-tower mcp pair [request id] [--discord]";
@@ -845,6 +899,17 @@ pub fn doctor(home: &std::path::Path) -> Vec<tower_cli::doctorcmd::Finding> {
             )));
         }
     }
+    if base.is_ok() {
+        out.push(match cfg.mcp.local_listen() {
+            Err(e) => bad(e),
+            Ok(addr) => match probe(&format!("http://{addr}{meta}")) {
+                Ok(()) => ok(format!("this machine: http://{addr}/mcp")),
+                Err(e) => bad(format!(
+                    "nothing answers on http://{addr} ({e}) — set mcp.local_listen if the port is taken"
+                )),
+            },
+        });
+    }
     if let (Ok(base), Ok(listen)) = (&base, cfg.mcp.listen()) {
         // Unpublished is a choice, not a fault: nothing outside reaches the
         // server until the tunnel is opened.
@@ -869,6 +934,27 @@ pub fn doctor(home: &std::path::Path) -> Vec<tower_cli::doctorcmd::Finding> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 🚨 What the tunnel forwards to must never take a callback on this
+    /// machine while it has a public URL; only the unpublished port may.
+    #[test]
+    fn only_the_unpublished_server_takes_a_callback_on_this_machine() {
+        let cfg = tower_config::Config::default();
+        let dir = std::path::PathBuf::from("/nowhere");
+        let public = main_settings(&cfg, "https://mac.t.ts.net".into(), false, dir.clone());
+        assert!(!public.loopback_callbacks);
+        let alone = main_settings(&cfg, "http://127.0.0.1:8787".into(), true, dir.clone());
+        assert!(alone.loopback_callbacks);
+        let addr = cfg.mcp.local_listen().unwrap();
+        let local = local_settings(&cfg, addr, dir);
+        assert!(local.loopback_callbacks);
+        assert_eq!(local.base, "http://127.0.0.1:8788");
+        assert!(
+            local.redirect_uris.is_empty(),
+            "this machine's callbacks only"
+        );
+        assert_ne!(addr, cfg.mcp.listen().unwrap());
+    }
 
     #[test]
     fn the_public_url_is_this_machines_tailscale_name() {
