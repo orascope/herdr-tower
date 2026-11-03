@@ -2,7 +2,8 @@
 // Copyright 2026 ORASCOPE Co.,Ltd. (https://www.orascope.net)
 
 //! The link at the header's right end: the project's page, or a newer
-//! release once the supervisor has seen one, opened in the browser on a click.
+//! release once the supervisor has seen one. The cells are a hyperlink for the
+//! terminal showing them; a plain click only says how to open it.
 
 mod common;
 
@@ -11,8 +12,11 @@ use std::sync::Arc;
 
 use common::*;
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::backend::CrosstermBackend;
+use ratatui::layout::Rect;
+use ratatui::{Terminal, TerminalOptions, Viewport};
 use tower_state::DaemonSnapshot;
-use tower_ui::view::{compose, screen_lines, REPO_URL};
+use tower_ui::view::{compose, mark_link, render_lines, screen_lines, REPO_URL};
 use tower_ui::{line_text, Action, Event, Usage, UsageFrame};
 
 const PROJECT: &str = "★ github.com/orascope/herdr-tower ↗";
@@ -91,10 +95,169 @@ fn click(f: &mut Fixture, row: usize, col: usize) -> Action {
     }))
 }
 
-/// On the usage line, flush right one cell in from the edge, and a click
-/// anywhere on it — first cell to last — opens the project's page.
+fn says_how_to_open(f: &Fixture, url: &str) -> bool {
+    f.app.notice() == format!("ctrl+click opens {url}")
+}
+
+/// A terminal's input, readable while the terminal still holds it.
+#[derive(Clone, Default)]
+struct Written(Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for Written {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// What the tower writes for frames of `f`, one draw per `redraws` entry: the
+/// frame's bytes, through the same steps as the run loop.
+fn drawn_bytes(f: &Fixture, width: u16, redraws: usize) -> Vec<Vec<u8>> {
+    let written = Written::default();
+    let mut terminal = Terminal::with_options(
+        CrosstermBackend::new(written.clone()),
+        TerminalOptions {
+            viewport: Viewport::Fixed(Rect::new(0, 0, width, 40)),
+        },
+    )
+    .unwrap();
+    let mut out = Vec::new();
+    for _ in 0..redraws {
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                let mut composed = compose(&f.app, area.width.into(), area.height.into());
+                render_lines(frame, area, std::mem::take(&mut composed.lines));
+                if let Some(link) = &composed.header_link {
+                    mark_link(frame.buffer_mut(), link);
+                }
+            })
+            .unwrap();
+        out.push(std::mem::take(&mut *written.0.lock().unwrap()));
+    }
+    out
+}
+
+/// The text a terminal shows for `bytes`, escape sequences removed, each
+/// visible character with the hyperlink open at it.
+fn linked_chars(bytes: &[u8]) -> Vec<(char, Option<String>)> {
+    let text = String::from_utf8_lossy(bytes);
+    let mut rest = text.as_ref();
+    let mut open = None;
+    let mut out = Vec::new();
+    while let Some(c) = rest.chars().next() {
+        if let Some(osc) = rest.strip_prefix("\x1b]8;;") {
+            let end = osc.find("\x1b\\").expect("the link is terminated");
+            let uri = &osc[..end];
+            open = (!uri.is_empty()).then(|| uri.to_string());
+            rest = &osc[end + 2..];
+        } else if let Some(csi) = rest.strip_prefix("\x1b[") {
+            let end = csi
+                .find(|c: char| c.is_ascii_alphabetic())
+                .expect("the sequence ends");
+            rest = &csi[end + 1..];
+        } else {
+            out.push((c, open.clone()));
+            rest = &rest[c.len_utf8()..];
+        }
+    }
+    out
+}
+
+fn linked_text(bytes: &[u8], url: &str) -> String {
+    linked_chars(bytes)
+        .into_iter()
+        .filter(|(_, link)| link.as_deref() == Some(url))
+        .map(|(c, _)| c)
+        .collect()
+}
+
+/// The link's text, and only that, goes out as a hyperlink to its page, and
+/// every sequence that opens one is closed.
 #[test]
-fn the_project_link_sits_at_the_usage_lines_right_end_and_opens_the_page() {
+fn the_links_text_reaches_the_terminal_as_a_hyperlink() {
+    let f = with_usage(140);
+    let frames = drawn_bytes(&f, 140, 1);
+    assert_eq!(linked_text(&frames[0], REPO_URL), PROJECT);
+    let chars = linked_chars(&frames[0]);
+    let linked = chars.iter().filter(|(_, l)| l.is_some()).count();
+    assert_eq!(linked, PROJECT.chars().count());
+    assert_eq!(chars.last().unwrap().1, None, "left open");
+}
+
+/// The cells after the link are still drawn: the diff must not count the
+/// escape sequence as cells and skip them. An unchanged frame writes no link
+/// again, so a redraw costs nothing.
+#[test]
+fn a_linked_cell_counts_as_its_text_and_a_redraw_repeats_nothing() {
+    let f = with_usage(140);
+    let frames = drawn_bytes(&f, 140, 2);
+    let plain: String = linked_chars(&frames[0]).iter().map(|(c, _)| *c).collect();
+    let cells = screen_lines(&f.app, 140, 40)
+        .iter()
+        .map(line_text)
+        .collect::<String>()
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>();
+    assert_eq!(
+        plain
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>(),
+        cells
+    );
+    assert!(
+        !String::from_utf8_lossy(&frames[1]).contains("\x1b]8;;"),
+        "an unchanged frame wrote the link again"
+    );
+}
+
+/// A newer release's link points at its own page, not the project's.
+#[test]
+fn a_newer_releases_cells_point_at_its_page() {
+    let mut f = with_usage(140);
+    supervisor(&mut f, "v0.61.6", "v0.61.7");
+    let url = format!("{REPO_URL}/releases/tag/v0.61.7");
+    let frames = drawn_bytes(&f, 140, 1);
+    assert_eq!(linked_text(&frames[0], &url), "v0.61.7 available ↗");
+    assert_eq!(linked_text(&frames[0], REPO_URL), "");
+}
+
+/// No room for the link: nothing goes out as one.
+#[test]
+fn a_link_with_no_room_sends_no_hyperlink() {
+    let f = with_usage(60);
+    let frames = drawn_bytes(&f, 60, 1);
+    assert!(!String::from_utf8_lossy(&frames[0]).contains("\x1b]8;;"));
+}
+
+/// A hit below the buffer marks nothing and does not panic.
+#[test]
+fn a_link_outside_the_buffer_marks_nothing() {
+    let mut buffer = ratatui::buffer::Buffer::empty(Rect::new(0, 0, 10, 1));
+    let before = buffer.clone();
+    for (row, cols) in [(1, 0..3), (0, 10..12), (usize::MAX, 0..3)] {
+        mark_link(
+            &mut buffer,
+            &tower_ui::view::LinkHit {
+                row,
+                cols,
+                url: REPO_URL.into(),
+            },
+        );
+    }
+    assert_eq!(buffer, before);
+}
+
+/// On the usage line, flush right one cell in from the edge, and a click
+/// anywhere on it — first cell to last — says how to open the project's page,
+/// and opens nothing itself.
+#[test]
+fn the_project_link_sits_at_the_usage_lines_right_end_and_says_how_to_open() {
     let mut f = with_usage(140);
     let hit = compose(&f.app, 140, 40)
         .header_link
@@ -106,12 +269,12 @@ fn the_project_link_sits_at_the_usage_lines_right_end_and_opens_the_page() {
     assert!(text.trim_end().ends_with(PROJECT), "{text}");
     assert!(text.contains("u usage"), "the reminder stays: {text}");
     for col in [hit.cols.start, hit.cols.end - 1] {
-        assert_eq!(click(&mut f, 1, col), Action::Open(REPO_URL.into()));
+        let mut f = with_usage(140);
+        assert_eq!(click(&mut f, 1, col), Action::Nothing);
+        assert!(says_how_to_open(&f, REPO_URL), "{}", f.app.notice());
     }
-    assert_ne!(
-        click(&mut f, 1, hit.cols.end),
-        Action::Open(REPO_URL.into())
-    );
+    let _ = click(&mut f, 1, hit.cols.end);
+    assert!(!f.app.notice().contains("ctrl+click"));
 }
 
 /// Without a usage line the first line carries it.
@@ -137,7 +300,10 @@ fn a_link_with_no_room_is_neither_drawn_nor_clickable() {
     for col in 0..60 {
         let mut f = with_usage(60);
         assert!(
-            !matches!(click(&mut f, 1, col), Action::Open(_)),
+            {
+                let _ = click(&mut f, 1, col);
+                !f.app.notice().contains("ctrl+click")
+            },
             "col {col}"
         );
     }
@@ -151,9 +317,11 @@ fn a_newer_release_takes_the_links_place() {
     supervisor(&mut f, "v0.61.6", "v0.61.7");
     let hit = compose(&f.app, 140, 40).header_link.expect("room");
     assert!(line(&f, 140, 1).trim_end().ends_with("v0.61.7 available ↗"));
-    assert_eq!(
-        click(&mut f, hit.row, hit.cols.start),
-        Action::Open(format!("{REPO_URL}/releases/tag/v0.61.7"))
+    let _ = click(&mut f, hit.row, hit.cols.start);
+    assert!(
+        says_how_to_open(&f, &format!("{REPO_URL}/releases/tag/v0.61.7")),
+        "{}",
+        f.app.notice()
     );
     for latest in ["v0.61.6", "v0.61.5", ""] {
         supervisor(&mut f, "v0.61.6", latest);
@@ -175,7 +343,8 @@ fn only_the_list_has_it() {
     )));
     assert_ne!(f.app.screen(), &tower_ui::Screen::List);
     assert!(compose(&f.app, 140, 40).header_link.is_none());
-    assert!(!matches!(click(&mut f, row, 130), Action::Open(_)));
+    let _ = click(&mut f, row, 130);
+    assert!(!f.app.notice().contains("ctrl+click"));
 }
 
 /// Edge: a heartbeat gone stale — the supervisor stopped — offers nothing,

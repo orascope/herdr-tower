@@ -240,8 +240,6 @@ pub enum Action {
         focus: Option<String>,
         seen: Option<String>,
     },
-    /// Open this web page in the person's browser.
-    Open(String),
     /// Ask a saved machine to do something, off the redraw path.
     ///
     /// It is an ssh round trip, and one to a machine that has stopped
@@ -1982,7 +1980,11 @@ impl App {
                     .as_ref()
                     .filter(|l| l.row == row && l.cols.contains(&col))
                 {
-                    return Action::Open(link.url.clone());
+                    // The tower does not open it: its process may be on another
+                    // machine from the person. The cells carry the link, so the
+                    // terminal showing them can, on a ctrl+click.
+                    self.notice = format!("ctrl+click opens {}", link.url);
+                    return Action::Nothing;
                 }
             }
             if let Some(hit) = self
