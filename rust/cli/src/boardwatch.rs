@@ -478,6 +478,8 @@ const STRIKE: &str = "\x1b[9m";
 const HEADER_BG: &str = "\x1b[48;2;31;48;58m";
 const HEADER_TITLE: &str = "\x1b[1;38;2;255;175;95m";
 const HEADER_DETAIL: &str = "\x1b[38;2;208;208;208m";
+/// The header title's orange, so the bar reads as part of the same frame.
+const THUMB: &str = "\x1b[38;2;255;175;95m";
 
 /// Fill the header line across the pane, stopping a cell short of its right
 /// edge so a terminal never wraps the frame into its scrollback.
@@ -527,7 +529,8 @@ fn board_heading(
 /// line from the frame before would show between this one and the bar.
 fn with_bar(line: &str, width: usize, thumb: bool, color: bool) -> String {
     let glyph = match (thumb, color) {
-        (true, _) => "┃".to_string(),
+        (true, true) => format!("{THUMB}┃{RESET}"),
+        (true, false) => "┃".to_string(),
         (false, true) => format!("{DIM}│{RESET}"),
         (false, false) => "│".to_string(),
     };
@@ -1231,7 +1234,8 @@ mod tests {
                     let out = with_bar(line, width, thumb, color);
                     assert!(out.contains(&format!("\x1b[K\x1b[{width}G")), "{out:?}");
                     assert!(!out[line.len()..].contains(' '), "no padding: {out:?}");
-                    let plain = out.replace(DIM, "").replace(RESET, "");
+                    assert_eq!(out.contains(THUMB), thumb && color, "{out:?}");
+                    let plain = out.replace(DIM, "").replace(THUMB, "").replace(RESET, "");
                     assert_eq!(text(&plain), line, "{out:?}");
                     assert_eq!(plain.ends_with('┃'), thumb, "{out:?}");
                 }
