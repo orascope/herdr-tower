@@ -112,6 +112,25 @@ impl Response {
         }
     }
 
+    /// An approval page. A browser holds the redirect after a form to
+    /// `form-action` too, so a server that takes callbacks on this machine has
+    /// to name them here or the approval never gets back to its client. Only
+    /// that server: the public page keeps `https:` alone.
+    fn approval(s: &Settings, status: u16, body: String) -> Self {
+        let mut page = Response::html(status, body);
+        if s.loopback_callbacks {
+            for (name, value) in &mut page.headers {
+                if *name == "Content-Security-Policy" {
+                    *value = value.replace(
+                        "form-action 'self' https:",
+                        "form-action 'self' https: http://localhost:* http://127.0.0.1:*",
+                    );
+                }
+            }
+        }
+        page
+    }
+
     pub fn text(status: u16, body: &str) -> Self {
         Response {
             status,
@@ -202,7 +221,7 @@ fn authorize_page(
         Err(e) => internal(e),
         Ok(Err((status, why))) => Response::html(status, error_page(&why)),
         Ok(Ok(None)) => Response::html(400, error_page(&oauth::Refusal::UnknownRequest.message())),
-        Ok(Ok(Some(who))) => Response::html(200, page(&who, now, s.act, false, None)),
+        Ok(Ok(Some(who))) => Response::approval(s, 200, page(&who, now, s.act, false, None)),
     }
 }
 
@@ -254,7 +273,8 @@ fn authorize_submit(
         Ok(Ok((_, Ok(location)))) => {
             Response::empty(302).with("Location", format!("{location}&iss={}", encode(&s.base)))
         }
-        Ok(Ok((Some(who), Err(refusal)))) => Response::html(
+        Ok(Ok((Some(who), Err(refusal)))) => Response::approval(
+            s,
             401,
             page(&who, now, s.act, ticked, Some(&refusal.message())),
         ),
@@ -1245,6 +1265,33 @@ mod tests {
     }
 
     /// Registers a client and opens its approval page; returns the request id.
+    /// 🚨 A browser applies `form-action` to the redirect after the form, so
+    /// without these the approval succeeds and never reaches a client on this
+    /// machine. The public page must not gain them: it is what a tunnel serves.
+    #[test]
+    fn only_the_page_that_takes_local_callbacks_lets_a_form_redirect_to_them() {
+        let csp = |r: &Response| {
+            r.headers
+                .iter()
+                .find(|(n, _)| *n == "Content-Security-Policy")
+                .map(|(_, v)| v.clone())
+                .unwrap()
+        };
+        let w = World::new();
+        let mut local = w.settings();
+        local.loopback_callbacks = true;
+        let page = csp(&Response::approval(&local, 200, String::new()));
+        assert!(page.contains("http://localhost:*"), "{page}");
+        assert!(page.contains("http://127.0.0.1:*"), "{page}");
+        assert!(page.contains("frame-ancestors 'none'"), "{page}");
+
+        let mut public = w.settings();
+        public.loopback_callbacks = false;
+        let page = csp(&Response::approval(&public, 200, String::new()));
+        assert!(page.contains("form-action 'self' https:;"), "{page}");
+        assert!(!page.contains("http://"), "{page}");
+    }
+
     fn open_page(w: &mut World) -> String {
         let r = w.send(
             "POST",
