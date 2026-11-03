@@ -94,6 +94,7 @@ fn outcome_of(d: std::result::Result<Delivered, Failed>, backend: String) -> Boa
                 record_born: d.record_born,
                 at: d.at,
                 boundary_lost: d.boundary_lost,
+                adopted_running: false,
             },
             verdict_kept: d.verdict_kept,
         },
@@ -682,6 +683,7 @@ mod tests {
                 record_born: None,
                 at: time::OffsetDateTime::UNIX_EPOCH,
                 boundary_lost: false,
+                adopted_running: false,
             };
             let d = BoardDelivery::Accepted {
                 receipt: receipt.clone(),

@@ -821,16 +821,13 @@ pub fn render_rows_scrolled(
         body.len().saturating_sub(room)
     };
     let offset = offset.min(max_offset);
-    if max_offset > 0 || (fold_closed && closed > 0) || (show_closed && closed > 0) {
+    // Only while some are out of sight, and with its unit: beside `9/19` a bare
+    // count of lines reads as a count of items.
+    if max_offset > 0 {
         let end = (offset + room).min(body.len());
-        let start = if room == 0 || body.is_empty() {
-            0
-        } else {
-            offset + 1
-        };
-        let range = format!("↕ {start}-{end}/{}", body.len());
+        let range = format!("↕ {}-{end}/{} lines", offset + 1, body.len());
         let used = tower_text::width(&title) + tower_text::width(&range);
-        if used + 2 <= width {
+        if used < width {
             let gap = " ".repeat(width - used);
             head[0] = header_line(&format!("{title}{gap}{range}"), width, color, true);
         }
@@ -1067,8 +1064,63 @@ mod tests {
             .expect("the header has its own background and text colour");
         assert_eq!(tower_text::width(content), 59, "fills the safe pane width");
         assert!(rows[0].contains("✗ 4 closed (x: show)"));
-        assert!(rows[0].contains("1-11/22"));
+        assert!(rows[0].contains("↕ 1-11/22 lines"), "{:?}", rows[0]);
         assert!(!rows[1].contains(HEADER_BG), "the body has no header band");
+    }
+
+    /// A count beside `9/19` must not read as a second count of items: nothing
+    /// when everything fits, and the unit when it does not.
+    #[test]
+    fn the_header_shows_a_range_of_lines_only_when_some_are_hidden() {
+        let now = OffsetDateTime::UNIX_EPOCH + time::Duration::days(20_000);
+        let b = many(15, &[1, 2, 3, 4]);
+        let page = |height, offset, show_closed| {
+            render_rows_scrolled(
+                &b,
+                &[],
+                now,
+                Some(""),
+                70,
+                height,
+                false,
+                &Default::default(),
+                offset,
+                show_closed,
+            )
+            .rows[0]
+                .0
+                .clone()
+        };
+        // Fits, closed items folded or shown: no range either way.
+        let fits = page(60, 0, true);
+        assert!(!fits.contains('↕') && !fits.contains("lines"), "{fits}");
+        assert!(
+            !page(23, 0, false).contains('↕'),
+            "fits once closed are folded"
+        );
+        // Overflows: the range, with its unit, at each end and between.
+        assert!(page(12, 0, false).ends_with("↕ 1-11/22 lines"));
+        assert!(page(12, 6, false).ends_with("↕ 7-17/22 lines"));
+        assert!(page(12, usize::MAX, false).ends_with("↕ 12-22/22 lines"));
+        // A pane with no room for both keeps the title, never wider than itself.
+        for width in 1..70 {
+            let rows = render_rows_scrolled(
+                &b,
+                &[],
+                now,
+                Some(""),
+                width,
+                12,
+                false,
+                &Default::default(),
+                0,
+                false,
+            )
+            .rows;
+            if let Some((head, _)) = rows.first() {
+                assert!(tower_text::width(head) < width.max(2), "{width}: {head:?}");
+            }
+        }
     }
 
     #[test]
@@ -1376,13 +1428,17 @@ mod tests {
         assert_eq!(first.max_offset, 11);
         assert!(first.rows[0].0.contains("✗ 4 closed (x: show)"));
         assert!(text(&first.rows[1].0).ends_with("item 5"));
-        assert!(first.rows[0].0.contains("1-11/22"));
+        assert!(
+            first.rows[0].0.contains("↕ 1-11/22 lines"),
+            "{:?}",
+            first.rows[0]
+        );
         let last = render_rows_scrolled(
             &b,
             &[],
             now,
             Some(""),
-            60,
+            70,
             12,
             false,
             &Default::default(),
@@ -1391,7 +1447,11 @@ mod tests {
         );
         assert_eq!(last.offset, 11);
         assert!(last.rows.iter().any(|(l, _)| text(l).ends_with("item 15")));
-        assert!(last.rows[0].0.contains("12-22/22"));
+        assert!(
+            last.rows[0].0.ends_with("↕ 12-22/22 lines"),
+            "{:?}",
+            last.rows[0]
+        );
         let expanded = render_rows_scrolled(
             &b,
             &[],
@@ -1506,7 +1566,7 @@ mod tests {
             false,
         );
         assert_eq!(tiny.max_offset, 0);
-        assert!(tiny.rows[0].0.contains("0-0/"));
+        assert!(!tiny.rows[0].0.contains('↕'));
     }
 
     #[test]

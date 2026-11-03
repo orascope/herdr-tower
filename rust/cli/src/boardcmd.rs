@@ -998,6 +998,7 @@ fn assign(
             record_born: agent.born_at,
             at: now,
             boundary_lost: false,
+            adopted_running: agent.state == tower_state::AgentState::Working,
         };
         let pane = pin.pane_id.clone();
         ctx.boards
@@ -1688,6 +1689,7 @@ mod tests {
                 record_born: Some(now()),
                 at: now(),
                 boundary_lost: false,
+                adopted_running: false,
             },
             verdict_kept: false,
         }
@@ -2119,6 +2121,7 @@ mod tests {
                 record_born: a.born_at,
                 at: now(),
                 boundary_lost: false,
+                adopted_running: false,
             },
             verdict_kept: false,
         }
@@ -2237,6 +2240,32 @@ mod tests {
         w.must(&["add", "more"], unused());
         let (_, r) = w.run(&["assign", "2", "w2:pBR", "--sent"], unused());
         assert!(r.unwrap_err().to_string().contains("already holds item 1"));
+    }
+
+    /// A worker whose count is still 0 has no lower count to read against, so
+    /// its running turn used to show as `sent  no start seen`.
+    #[test]
+    fn assign_sent_takes_over_a_running_turn_of_a_worker_with_no_count() {
+        let w = World::new();
+        pane_agent(&w, "w2:pBR", AgentState::Working, 0);
+        w.must(&["add", "#3239"], unused());
+        w.must(&["assign", "1", "w2:pBR", "--sent"], unused());
+        let (out, _) = w.run(&["show"], unused());
+        assert!(!out.contains("no start seen"), "{out}");
+        assert!(
+            out.contains("working") && out.contains("(uncertain)"),
+            "{out}"
+        );
+        // A worker adopted at rest is still not taken to have started.
+        let w = World::new();
+        pane_agent(&w, "w2:pBR", AgentState::Idle, 0);
+        w.must(&["add", "#3239"], unused());
+        w.must(&["assign", "1", "w2:pBR", "--sent"], unused());
+        let (out, _) = w.run(&["show"], unused());
+        assert!(
+            out.contains("no start seen") && out.contains("(uncertain)"),
+            "{out}"
+        );
     }
 
     #[test]

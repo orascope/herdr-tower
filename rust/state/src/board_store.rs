@@ -110,6 +110,11 @@ pub struct Receipt {
     /// or ended, so progress read against it is marked uncertain.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub adopted: bool,
+    /// Adopted while a turn was running, which is taken to be this item's. Said
+    /// outright because `work_seq` cannot: a worker whose count is still 0 has
+    /// no lower count to read against, and its turn looked not started.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub adopted_running: bool,
     /// The worker record's `born_at`: `work_seq` is compared only against a
     /// record with the same one.
     #[serde(
@@ -1431,6 +1436,7 @@ mod tests {
             record_born: None,
             at: now(),
             boundary_lost: false,
+            adopted_running: false,
         }
     }
 
