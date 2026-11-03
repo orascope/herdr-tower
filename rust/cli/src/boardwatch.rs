@@ -457,8 +457,8 @@ pub const CLEAR_ALL: &str = "\x1b[3J\x1b[H\x1b[2J";
 ///
 /// The scrollback is still cleared on every frame, because a pane that gets
 /// narrower re-wraps the last frame's lines and the terminal pushes the
-/// overflow there itself. herdr then draws its own scrollbar beside the
-/// board's, and that one stays until the scrollback is gone.
+/// overflow there itself. herdr then draws its own scrollbar, and that one
+/// stays until the scrollback is gone.
 pub fn frame(lines: &[String]) -> String {
     let mut out = String::from("\x1b[3J\x1b[H");
     for (i, line) in lines.iter().enumerate() {
@@ -514,38 +514,6 @@ fn board_heading(
     } else {
         tower_text::truncate_cell(&format!("{done}/{total} ✗ {closed}"), width)
     }
-}
-
-/// `line`, already cut to `width - 1` columns, padded out to them and ended
-/// with a scrollbar cell: `┃` on the thumb, `│` on the track.
-fn with_bar(line: &str, width: usize, thumb: bool, color: bool) -> String {
-    let pad = (width - 1).saturating_sub(visible_width(line));
-    let glyph = match (thumb, color) {
-        (true, _) => "┃".to_string(),
-        (false, true) => format!("{DIM}│{RESET}"),
-        (false, false) => "│".to_string(),
-    };
-    format!("{line}{}{glyph}", " ".repeat(pad))
-}
-
-/// The columns `line` takes once its escape sequences are left out.
-fn visible_width(line: &str) -> usize {
-    let mut plain = String::with_capacity(line.len());
-    let mut chars = line.chars();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            if chars.next() == Some('[') {
-                for c in chars.by_ref() {
-                    if ('@'..='~').contains(&c) {
-                        break;
-                    }
-                }
-            }
-        } else {
-            plain.push(c);
-        }
-    }
-    tower_text::width(&plain)
 }
 
 fn tone(p: Progress) -> &'static str {
@@ -740,9 +708,7 @@ pub fn render_rows_scrolled(
         };
     }
     // Each item supplies its lines and the pane a click on those lines targets.
-    // How many lines an item takes does not depend on `width`, so the body can
-    // be built again a column narrower once it is known to need a scrollbar.
-    let blocks_at = |width: usize| -> Vec<(bool, Vec<String>, Option<String>)> {
+    let blocks: Vec<(bool, Vec<String>, Option<String>)> = {
         let mut blocks: Vec<(bool, Vec<String>, Option<String>)> = board
             .items
             .iter()
@@ -799,7 +765,6 @@ pub fn render_rows_scrolled(
         blocks.sort_by_key(|(is_closed, _, _)| *is_closed);
         blocks
     };
-    let blocks = blocks_at(width);
     let room = height.saturating_sub(head.len());
     let total: usize = blocks.iter().map(|(_, lines, _)| lines.len()).sum();
     let fold_closed = !show_closed && total > room;
@@ -815,17 +780,11 @@ pub fn render_rows_scrolled(
         );
         head[0] = header_line(&title, width, color, true);
     }
-    let body_of =
-        |blocks: Vec<(bool, Vec<String>, Option<String>)>| -> Vec<(String, Option<String>)> {
-            blocks
-                .into_iter()
-                .filter(|(is_closed, _, _)| !fold_closed || !*is_closed)
-                .flat_map(|(_, lines, pane)| {
-                    lines.into_iter().map(move |line| (line, pane.clone()))
-                })
-                .collect()
-        };
-    let mut body = body_of(blocks);
+    let body: Vec<(String, Option<String>)> = blocks
+        .into_iter()
+        .filter(|(is_closed, _, _)| !fold_closed || !*is_closed)
+        .flat_map(|(_, lines, pane)| lines.into_iter().map(move |line| (line, pane.clone())))
+        .collect();
     let max_offset = if room == 0 {
         0
     } else {
@@ -839,35 +798,18 @@ pub fn render_rows_scrolled(
         } else {
             offset + 1
         };
-        let range = format!("  ↕ {start}-{end}/{}", body.len());
-        if tower_text::width(&title) + tower_text::width(&range) <= width {
-            head[0] = header_line(&format!("{title}{range}"), width, color, true);
+        // At the band's right end, and the only sign of the scroll: a bar down
+        // the side needs every line's width to be exact, and emoji and CJK are
+        // drawn differently from terminal to terminal, so its column wandered.
+        let range = format!("↕ {start}-{end}/{}", body.len());
+        let used = tower_text::width(&title) + tower_text::width(&range);
+        if used + 2 <= width {
+            let gap = " ".repeat(width - used);
+            head[0] = header_line(&format!("{title}{gap}{range}"), width, color, true);
         }
     }
-    // Lines are hidden: the body gives up its last column to a scrollbar, the
-    // same one the dock's list draws.
-    let shown = room.min(body.len() - offset);
-    let bar = if max_offset > 0 && width >= 2 {
-        body = body_of(blocks_at(width - 1));
-        tower_ui::view::scrollbar(
-            body.len(),
-            tower_ui::view::ListWindow {
-                start: offset,
-                end: offset + shown,
-                above: offset,
-                below: body.len() - offset - shown,
-            },
-        )
-    } else {
-        Vec::new()
-    };
     let mut rows: Vec<(String, Option<String>)> = head.into_iter().map(|l| (l, None)).collect();
-    for (i, (line, pane)) in body.into_iter().skip(offset).take(room).enumerate() {
-        rows.push(match bar.get(i) {
-            Some(Some(thumb)) => (with_bar(&line, width, *thumb, color), pane),
-            _ => (line, pane),
-        });
-    }
+    rows.extend(body.into_iter().skip(offset).take(room));
     rows.truncate(height);
     Page {
         rows,
@@ -1224,62 +1166,23 @@ mod tests {
         }
     }
 
-    /// A body line without its scrollbar cell and the padding before it.
     fn text(line: &str) -> &str {
-        line.trim_end_matches(['┃', '│']).trim_end()
+        line.trim_end()
     }
 
+    /// The header says where the list is, at its right end, and never wider
+    /// than the pane, whatever the offset.
     #[test]
-    fn visible_width_leaves_out_escapes_only() {
-        // Edge cases: nothing, escapes alone, wide glyphs, a sequence cut off.
-        let cases = [
-            ("empty", "", 0),
-            ("plain", "abc", 3),
-            ("escapes only", "\x1b[0m\x1b[1;38;2;255;175;95m", 0),
-            ("wide glyphs", "\x1b[2m한글\x1b[0m", 4),
-            ("unterminated", "ab\x1b[38;2", 2),
-            ("bare escape", "a\x1b", 1),
-        ];
-        for (name, line, want) in cases {
-            assert_eq!(visible_width(line), want, "{name}");
-        }
-        // Property: painting never changes what shows.
-        for code in [DIM, STRIKE, PANE, HEADER_BG, "\x1b[1;31m"] {
-            for s in ["", "x", "↳ note", "P1 [w2:pE1] 한글"] {
-                let painted = format!("{code}{s}{RESET}");
-                assert_eq!(visible_width(&painted), tower_text::width(s), "{painted:?}");
-            }
-        }
-    }
-
-    #[test]
-    fn a_bar_cell_round_trips_and_ends_every_width() {
-        for width in 2..12 {
-            for (len, line) in [0, 1, width - 1].into_iter().map(|n| (n, "a".repeat(n))) {
-                for (thumb, color) in [(true, false), (false, false), (true, true), (false, true)] {
-                    let out = with_bar(&line, width, thumb, color);
-                    // Always one cell short of the pane, the bar in the last.
-                    assert_eq!(visible_width(&out), width, "{width} {len} {out:?}");
-                    // Round trip: the text comes back once the bar is taken off.
-                    let plain = out.replace(DIM, "").replace(RESET, "");
-                    assert_eq!(text(&plain), line, "{out:?}");
-                    assert_eq!(plain.ends_with('┃'), thumb, "{out:?}");
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn the_board_thumb_walks_down_with_the_offset() {
+    fn the_header_tells_where_a_scrolled_board_is() {
         let now = OffsetDateTime::UNIX_EPOCH + time::Duration::days(20_000);
         let b = many(12, &[]);
-        let page = |offset| {
+        let page = |offset, width| {
             render_rows_scrolled(
                 &b,
                 &[],
                 now,
                 Some(""),
-                30,
+                width,
                 8,
                 false,
                 &Default::default(),
@@ -1287,42 +1190,45 @@ mod tests {
                 false,
             )
         };
-        let max = page(usize::MAX).max_offset;
-        let mut last_at = 0;
+        let max = page(usize::MAX, 40).max_offset;
+        assert!(max > 0);
         for offset in 0..=max {
-            let p = page(offset);
-            let bar: Vec<bool> = p.rows[1..].iter().map(|(l, _)| l.ends_with('┃')).collect();
-            // One unbroken thumb, never moving back up as the offset grows.
-            let at = bar.iter().position(|&t| t).expect("a thumb");
-            let len = bar.iter().filter(|&&t| t).count();
-            assert!(bar[at..at + len].iter().all(|&t| t), "{offset}: {bar:?}");
-            assert!(at >= last_at, "{offset}: {at} < {last_at}");
-            last_at = at;
-            // Cross-check against the dock's bar for the same window.
-            let shown = p.rows.len() - 1;
-            let want: Vec<bool> = tower_ui::view::scrollbar(
-                24,
-                tower_ui::view::ListWindow {
-                    start: offset,
-                    end: offset + shown,
-                    above: offset,
-                    below: 24 - offset - shown,
-                },
-            )
-            .into_iter()
-            .map(|c| c == Some(true))
-            .collect();
-            assert_eq!(bar, want, "{offset}");
+            let head = page(offset, 40).rows[0].0.clone();
+            let want = format!("↕ {}-{}/24", offset + 1, offset + 7);
+            assert!(head.ends_with(&want), "{offset}: {head:?}");
+            // One cell short of the pane, as the whole frame is.
+            assert_eq!(tower_text::width(&head), 39, "{head:?}");
         }
-        assert!(page(0).rows[1].0.ends_with('┃'));
-        assert!(page(max).rows.last().unwrap().0.ends_with('┃'));
+        // A pane too narrow for both keeps the title.
+        for width in 1..40 {
+            // The narrowest pane draws nothing at all.
+            for (head, _) in page(0, width).rows.iter().take(1) {
+                assert!(tower_text::width(head) <= width, "{width}: {head:?}");
+            }
+        }
+        // A board that fits says nothing about scrolling.
+        let fits = render_rows_scrolled(
+            &b,
+            &[],
+            now,
+            Some(""),
+            40,
+            40,
+            false,
+            &Default::default(),
+            0,
+            false,
+        );
+        assert!(!fits.rows[0].0.contains('↕'));
     }
 
+    /// No column runs down the side: its alignment would hang on every line's
+    /// width being drawn exactly as computed, which emoji and CJK do not promise.
     #[test]
-    fn an_overflowing_board_has_a_scrollbar() {
+    fn a_scrolled_board_draws_nothing_down_the_side() {
         let now = OffsetDateTime::UNIX_EPOCH + time::Duration::days(20_000);
         let b = many(15, &[]);
-        let page = |offset, color| {
+        let long = |offset, color| {
             render_rows_scrolled(
                 &b,
                 &[],
@@ -1336,45 +1242,28 @@ mod tests {
                 false,
             )
         };
-        // Every body line ends in the column before the pane's last: the
-        // thumb at the top for the first lines, at the bottom for the last.
-        let top = page(0, false);
-        let bar: String = top.rows[1..]
-            .iter()
-            .map(|(l, _)| {
-                assert_eq!(tower_text::width(l), 39, "{l:?}");
-                l.chars().last().unwrap()
-            })
-            .collect();
-        assert!(bar.starts_with('┃') && bar.ends_with('│'), "{bar}");
-        assert!(
-            !top.rows[0].0.ends_with(['┃', '│']),
-            "the header has no bar"
-        );
-        let bottom = page(usize::MAX, false);
-        let bar: String = bottom.rows[1..]
-            .iter()
-            .map(|(l, _)| l.chars().last().unwrap())
-            .collect();
-        assert!(bar.starts_with('│') && bar.ends_with('┃'), "{bar}");
-        // Coloured lines are padded by what shows, not by their escapes.
-        for (l, _) in &page(0, true).rows[1..] {
-            assert_eq!(visible_width(l), 39, "{l:?}");
-        }
-        // A board that fits keeps every column for its text.
         let fits = render_rows_scrolled(
             &b,
             &[],
             now,
             Some(""),
             40,
-            40,
+            60,
             false,
             &Default::default(),
             0,
             false,
         );
-        assert!(fits.rows.iter().all(|(l, _)| !l.ends_with(['┃', '│'])));
+        for page in [long(0, false), long(usize::MAX, false), long(0, true)] {
+            assert!(page.max_offset > 0);
+            for (l, _) in &page.rows[1..] {
+                assert!(!l.contains(['┃', '│']), "{l:?}");
+            }
+        }
+        // Scrolling costs a line its text nothing: the same lines as unscrolled.
+        for (l, _) in &long(0, false).rows[1..] {
+            assert!(fits.rows.iter().any(|(f, _)| f == l), "{l:?}");
+        }
     }
 
     #[test]
