@@ -353,6 +353,33 @@ fn place_header_link(header: &mut [Line<'static>], app: &App, width: usize) -> O
     })
 }
 
+/// Makes the link's cells a hyperlink (OSC 8), so the terminal showing them
+/// handles the click on the person's machine, wherever the tower runs.
+///
+/// Each cell carries its own open and close, because a cell is what ratatui
+/// redraws. The forced width is the text's: left to measure the symbol, the
+/// diff would count the escape sequence as cells and skip the ones after it.
+pub fn mark_link(buffer: &mut ratatui::buffer::Buffer, link: &LinkHit) {
+    let Ok(y) = u16::try_from(link.row) else {
+        return;
+    };
+    for col in link.cols.clone() {
+        let Some(cell) = u16::try_from(col)
+            .ok()
+            .and_then(|x| buffer.cell_mut((x, y)))
+        else {
+            continue;
+        };
+        let Some(width) = std::num::NonZeroU16::new(ratatui::buffer::CellWidth::cell_width(&*cell))
+        else {
+            continue;
+        };
+        let symbol = format!("\x1b]8;;{}\x1b\\{}\x1b]8;;\x1b\\", link.url, cell.symbol());
+        cell.set_symbol(&symbol)
+            .set_diff_option(ratatui::buffer::CellDiffOption::ForcedWidth(width));
+    }
+}
+
 /// Cells in each of the machine's meters: as wide as a window's on the usage
 /// line beside them.
 const HOST_METER: usize = 5;
