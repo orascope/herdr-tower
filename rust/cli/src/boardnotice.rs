@@ -344,6 +344,7 @@ mod tests {
                 record_born: Some(now()),
                 at: now(),
                 boundary_lost: false,
+                adopted_running: false,
             }),
             now(),
         )

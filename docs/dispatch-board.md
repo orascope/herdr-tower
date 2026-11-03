@@ -148,7 +148,8 @@ The rest of this page is the design and its contract.
   a pane (pinned to the agent it held — record generation and session — and
   refused on send if the pane now holds another), or a label for a worker the
   tower cannot see. `assign` queues without sending; `assign --sent` takes
-  over an item the advisor sent itself, marked uncertain. The one-open-item
+  over an item the advisor sent itself, marked uncertain; a turn running at that
+  moment counts as the item's. The one-open-item
   rule is per agent.
 
 - 2026-09-28 `board send` delivers the item to the worker itself; recording and
@@ -470,7 +471,8 @@ when it is still an idle shell holding our claim, and is left alone otherwise.
   is not running, or herdr did not answer — the view says
   `not refreshed by the supervisor — progress as last seen`.
 - In a short pane, the header stays visible while the list scrolls. Use the
-  mouse wheel, `↑`/`↓`, or `k`/`j`; the header shows the visible line range.
+  mouse wheel, `↑`/`↓`, or `k`/`j`; the header shows the visible lines (`↕ 1-30/45 lines`), and nothing when they
+  all fit.
   Closed items are folded first; the title line shows their count and the
   `x: show` or `x: hide` action. `x` shows or hides them. Notes remain
   reachable. Redraws overwrite the same screen instead of filling terminal

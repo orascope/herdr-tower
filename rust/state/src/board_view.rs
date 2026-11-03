@@ -190,7 +190,7 @@ fn sent_column(receipt: &crate::Receipt, records: &[&Agent]) -> Column {
     if reborn || a.work_seq < receipt.work_seq {
         return Column::new(Progress::Unclear, None);
     }
-    let started = a.work_seq > receipt.work_seq;
+    let started = a.work_seq > receipt.work_seq || receipt.adopted_running;
     // A record with no id yet may be the same conversation or a new one.
     let unsure = a.session_id.is_empty() || (no_session && receipt.record_born.is_none());
     let mut c = match a.state {
@@ -236,6 +236,7 @@ mod tests {
             record_born: Some(at(0)),
             at: at(0),
             boundary_lost: false,
+            adopted_running: false,
         }
     }
 
