@@ -86,7 +86,12 @@ notification channel.
    `127.0.0.1:8787` (log: `~/.local/state/herdr-tower/daemon.log`). With no public
    URL — no Tailscale, or Tailscale logged out — it serves this machine alone:
    `http://127.0.0.1:8787/mcp`, for a client on the Mac such as Claude Code (a
-   callback on this machine is allowed then). A phone needs the public URL. `herdr-tower mcp off` turns it off and `mcp on` back on; both restart the
+   callback on this machine is allowed then). With a public URL, clients on the Mac
+   use a second, never-published port instead: `http://127.0.0.1:8788/mcp`
+   (`mcp.local_listen`). The port is what tells them apart, as a tunnel's requests
+   arrive from loopback too, so a callback on this machine is allowed only there.
+   It shares the grants, the pairing code and the approval page with the public
+   server. Do not point a tunnel at it. A phone needs the public URL. `herdr-tower mcp off` turns it off and `mcp on` back on; both restart the
    supervisor. Until 2026-09 it was a LaunchAgent of its own (`dev.herdr.tower.mcp`),
    which `daemon install` and `mcp on` now remove.
 5. **The tunnel.** `tailscale funnel --bg 8787` publishes that port at the public URL.
