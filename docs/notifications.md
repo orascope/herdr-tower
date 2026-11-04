@@ -30,7 +30,7 @@
 - `update_check` (optional): whether the supervisor asks GitHub's public
   releases API for the newest tag, every six hours (hourly after a failed
   request). Default `true`. The tower's header ends in a
-  `★ github.com/orascope/herdr-tower ↗` link — ctrl+click opens it in the browser —
+  `★ https://github.com/orascope/herdr-tower ↗` link — ctrl+click opens it in the browser —
   and in `v… available ↗` once a release newer than the supervisor is out.
   `false` sends nothing and keeps the plain link
 
