@@ -13,7 +13,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use base64::Engine as _;
@@ -694,7 +694,10 @@ pub fn serve_on(listener: std::net::TcpListener, h: Arc<dyn Handler>) -> io::Res
             }
         };
         let taken = pools.reading.fetch_add(1, Ordering::SeqCst);
-        if taken >= MAX_READING {
+        // Full: the newcomer takes the place of whoever has sat longest on an
+        // unfinished head. That connection's thread sees it closed and gives
+        // its slot back, so the count is over the limit only for a moment.
+        if taken >= MAX_READING && !pools.heads.close_oldest(std::time::Instant::now()) {
             pools.reading.fetch_sub(1, Ordering::SeqCst);
             let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
             let _ = write_response(&mut stream, &busy());
@@ -708,9 +711,10 @@ pub fn serve_on(listener: std::net::TcpListener, h: Arc<dyn Handler>) -> io::Res
             pools: pools.clone(),
             which: Pool::Reading,
         };
+        let head = HeadWatch::start(&pools, &stream);
         let (h, pools) = (h.clone(), pools.clone());
         let spawned = std::thread::Builder::new().spawn(move || {
-            serve_one(h.as_ref(), &pools, stream, reading, reserved);
+            serve_one(h.as_ref(), &pools, stream, reading, head, reserved);
         });
         // Out of threads: the connection is dropped (its slot with it) and
         // the loop goes on.
@@ -745,6 +749,11 @@ pub const RESERVED_READING: usize = 8;
 /// client sends it at once; a stranger trickling heads into these slots has
 /// to open a new connection this often to keep one.
 pub const RESERVED_HEAD_DEADLINE: Duration = Duration::from_secs(2);
+/// How long a head may be unfinished before a newcomer to a full pool can take
+/// its place. A real client sends its head at once, so what sits this long is
+/// not on its way to being a request. Keeping the pool full now means renewing
+/// every connection within this, far more often than the head deadlines asked.
+pub const HEAD_MAY_YIELD_AFTER: Duration = Duration::from_millis(250);
 /// A request head larger than this is refused.
 pub const HEAD_CAP: usize = 16 * 1024;
 /// How long writing an answer may take.
@@ -755,6 +764,71 @@ struct Pools {
     reading: AtomicUsize,
     tools: AtomicUsize,
     control: AtomicUsize,
+    heads: Heads,
+}
+
+/// The connections whose head has not finished arriving, oldest first.
+#[derive(Default)]
+struct Heads {
+    next_id: AtomicUsize,
+    waiting: Mutex<Vec<HeadWaiter>>,
+}
+
+struct HeadWaiter {
+    id: usize,
+    since: std::time::Instant,
+    stream: std::net::TcpStream,
+}
+
+impl Heads {
+    /// Closes the oldest head at least [`HEAD_MAY_YIELD_AFTER`] old. False when
+    /// there is none: the pool is full of bodies or of heads just arrived, and
+    /// the newcomer is the one turned away.
+    fn close_oldest(&self, now: std::time::Instant) -> bool {
+        let Ok(mut waiting) = self.waiting.lock() else {
+            return false;
+        };
+        let due = waiting
+            .first()
+            .is_some_and(|w| now.saturating_duration_since(w.since) >= HEAD_MAY_YIELD_AFTER);
+        if due {
+            let _ = waiting.remove(0).stream.shutdown(std::net::Shutdown::Both);
+        }
+        due
+    }
+}
+
+/// One connection's place in [`Heads`], given up when its head is in or the
+/// connection ends.
+struct HeadWatch {
+    pools: Arc<Pools>,
+    id: Option<usize>,
+}
+
+impl HeadWatch {
+    /// A connection that cannot be duplicated is not listed. It keeps its slot
+    /// to its deadline, as any did before.
+    fn start(pools: &Arc<Pools>, stream: &std::net::TcpStream) -> Self {
+        let id = stream.try_clone().ok().and_then(|stream| {
+            let id = pools.heads.next_id.fetch_add(1, Ordering::SeqCst);
+            let since = std::time::Instant::now();
+            let mut waiting = pools.heads.waiting.lock().ok()?;
+            waiting.push(HeadWaiter { id, since, stream });
+            Some(id)
+        });
+        HeadWatch {
+            pools: pools.clone(),
+            id,
+        }
+    }
+}
+
+impl Drop for HeadWatch {
+    fn drop(&mut self) {
+        if let (Some(id), Ok(mut waiting)) = (self.id, self.pools.heads.waiting.lock()) {
+            waiting.retain(|w| w.id != id);
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -798,13 +872,18 @@ fn serve_one(
     pools: &Arc<Pools>,
     mut stream: std::net::TcpStream,
     reading: PoolSlot,
+    head: HeadWatch,
     reserved: bool,
 ) {
     let _ = stream.set_write_timeout(Some(WRITE_TIMEOUT));
     let admits =
         |headers: &[(String, String)]| h.admits_reserved(headers, OffsetDateTime::now_utc());
     let gate: Option<Gate> = if reserved { Some(&admits) } else { None };
-    let parsed = read_request(&mut stream, h.read_deadline(), gate);
+    let mut head = Some(head);
+    let parsed = read_request(&mut stream, h.read_deadline(), gate, &mut || {
+        head.take();
+    });
+    head.take();
     drop(reading);
     let now = OffsetDateTime::now_utc();
     let (method, path, resp) = match parsed {
@@ -910,10 +989,12 @@ fn read_some(
 /// `reserved` is set for a connection on a reserved slot
 /// ([`RESERVED_READING`]): its head has [`RESERVED_HEAD_DEADLINE`] at most,
 /// and a body still to come is read only if the gate accepts the headers.
+/// `head_in` is called once the head has arrived.
 fn read_request(
     stream: &mut std::net::TcpStream,
     deadline: Duration,
     reserved: Option<Gate>,
+    head_in: &mut dyn FnMut(),
 ) -> Result<Raw, ReadError> {
     use std::io::Write as _;
     let start = std::time::Instant::now();
@@ -935,6 +1016,7 @@ fn read_request(
         let n = read_some(stream, head_until, &mut chunk)?;
         buf.extend_from_slice(&chunk[..n]);
     };
+    head_in();
     let head = std::str::from_utf8(&buf[..head_end - 4])
         .map_err(|_| ReadError::Refused(400, "bad request\n"))?;
     let mut lines = head.split("\r\n");
@@ -2035,8 +2117,36 @@ mod tests {
         );
     }
 
-    /// #116: filling the reading pool gets a 503 at worst, and only until
-    /// the stalled connections run out of time.
+    /// A full pool of stalled heads turns nobody away: each newcomer takes the
+    /// place of the oldest, which is closed, and the server goes on answering
+    /// well after the pool first filled.
+    #[test]
+    fn stalled_heads_give_way_to_newcomers() {
+        use std::io::Read as _;
+        let w = World::new();
+        let listen = start_server(|| w.settings(), Arc::new(Nobody::default()));
+        let mut stalled: Vec<_> = (0..MAX_READING)
+            .map(|_| stall(listen, "GET / HTTP/1.1\r\n"))
+            .collect();
+        std::thread::sleep(HEAD_MAY_YIELD_AFTER + std::time::Duration::from_millis(100));
+        for _ in 0..3 {
+            assert_eq!(
+                exchange(listen, "GET / HTTP/1.1\r\nHost: x\r\n\r\n"),
+                Some(200)
+            );
+        }
+        // The first to stall was closed, with no answer; the last still waits.
+        let wait = Some(std::time::Duration::from_millis(100));
+        let first = &mut stalled[0];
+        first.set_read_timeout(wait).unwrap();
+        assert_eq!(first.read(&mut [0u8; 1]).unwrap(), 0, "the oldest gave way");
+        let last = stalled.last_mut().unwrap();
+        last.set_read_timeout(wait).unwrap();
+        assert!(last.read(&mut [0u8; 1]).is_err(), "the newest did not");
+    }
+
+    /// #116: a pool held by heads that may not yet be closed recovers at the
+    /// deadline, and a stalled connection's slot does not outlast it.
     #[test]
     fn a_full_reading_pool_recovers_at_the_deadline() {
         let w = quick_world();
@@ -2044,16 +2154,110 @@ mod tests {
         let stalled: Vec<_> = (0..MAX_READING)
             .map(|_| stall(listen, "GET / HTTP/1.1\r\n"))
             .collect();
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        assert_eq!(
-            exchange(listen, "GET / HTTP/1.1\r\nHost: x\r\n\r\n"),
-            Some(503)
-        );
         std::thread::sleep(std::time::Duration::from_millis(1200));
         assert_eq!(
             exchange(listen, "GET / HTTP/1.1\r\nHost: x\r\n\r\n"),
             Some(200)
         );
+        drop(stalled);
+    }
+
+    /// A connected pair on loopback; the first end is the server's.
+    fn pair() -> (std::net::TcpStream, std::net::TcpStream) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        (listener.accept().unwrap().0, client)
+    }
+
+    fn waiter(id: usize, since: std::time::Instant) -> (HeadWaiter, std::net::TcpStream) {
+        let (stream, client) = pair();
+        (HeadWaiter { id, since, stream }, client)
+    }
+
+    /// The oldest goes first, and only once it is old enough: one moment under
+    /// the line stays, the line itself goes.
+    #[test]
+    fn the_oldest_head_is_closed_and_only_when_due() {
+        use std::io::Read as _;
+        let t = std::time::Instant::now();
+        let heads = Heads::default();
+        let (a, mut a_client) = waiter(1, t);
+        let (b, mut b_client) = waiter(2, t + std::time::Duration::from_millis(10));
+        heads.waiting.lock().unwrap().extend([a, b]);
+        let just_under = t + HEAD_MAY_YIELD_AFTER - std::time::Duration::from_millis(1);
+        assert!(!heads.close_oldest(just_under), "too young");
+        assert_eq!(heads.waiting.lock().unwrap().len(), 2);
+
+        assert!(heads.close_oldest(t + HEAD_MAY_YIELD_AFTER));
+        let left: Vec<_> = heads.waiting.lock().unwrap().iter().map(|w| w.id).collect();
+        assert_eq!(left, [2], "the oldest went");
+        a_client
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        assert_eq!(a_client.read(&mut [0u8; 1]).unwrap(), 0, "and was closed");
+        b_client
+            .set_read_timeout(Some(std::time::Duration::from_millis(50)))
+            .unwrap();
+        assert!(b_client.read(&mut [0u8; 1]).is_err(), "the other is open");
+
+        assert!(!heads.close_oldest(t), "the next is not due");
+        assert!(heads.close_oldest(t + std::time::Duration::from_secs(60)));
+        assert!(
+            !heads.close_oldest(t + std::time::Duration::from_secs(60)),
+            "none left"
+        );
+    }
+
+    /// A head that has arrived, or a connection that has ended, is off the list:
+    /// a request reading its body, or being handled, is never closed for a
+    /// newcomer.
+    #[test]
+    fn a_finished_head_leaves_the_list() {
+        let pools = Arc::new(Pools::default());
+        let (server, _client) = pair();
+        let first = HeadWatch::start(&pools, &server);
+        let second = HeadWatch::start(&pools, &server);
+        assert_eq!(pools.heads.waiting.lock().unwrap().len(), 2);
+        drop(first);
+        let left: Vec<_> = pools
+            .heads
+            .waiting
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|w| w.id)
+            .collect();
+        assert_eq!(left, [second.id.unwrap()]);
+        drop(second);
+        assert!(pools.heads.waiting.lock().unwrap().is_empty());
+        let later = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        assert!(!pools.heads.close_oldest(later));
+    }
+
+    /// A body in flight keeps its connection however full the pool is: heads
+    /// are what give way, so a client past its head is left to finish.
+    #[test]
+    fn a_stalled_body_is_not_closed_for_a_newcomer() {
+        use std::io::Read as _;
+        let w = World::new();
+        let listen = start_server(|| w.settings(), Arc::new(Nobody::default()));
+        let mut body = stall(
+            listen,
+            "POST /token HTTP/1.1\r\nHost: x\r\nContent-Length: 1000\r\n\r\nx",
+        );
+        let stalled: Vec<_> = (0..MAX_READING - 1)
+            .map(|_| stall(listen, "GET / HTTP/1.1\r\n"))
+            .collect();
+        std::thread::sleep(HEAD_MAY_YIELD_AFTER + std::time::Duration::from_millis(100));
+        for _ in 0..4 {
+            assert_eq!(
+                exchange(listen, "GET / HTTP/1.1\r\nHost: x\r\n\r\n"),
+                Some(200)
+            );
+        }
+        body.set_read_timeout(Some(std::time::Duration::from_millis(100)))
+            .unwrap();
+        assert!(body.read(&mut [0u8; 1]).is_err(), "still open, no answer");
         drop(stalled);
     }
 
