@@ -744,7 +744,7 @@ mod tests {
         assert_eq!(snap.counts, ParallaxCounts::default());
         let (_, notices) = watch.apply(done(counts(0, 2, 0), 40), &store);
         assert!(notices.is_empty(), "{notices:?}");
-        let (_, notices) = watch.apply(gone(50), &store).clone();
+        let (_, notices) = watch.apply(gone(50), &store);
         assert!(notices.is_empty());
         let (_, notices) = watch.apply(done(counts(0, 3, 0), 60), &store);
         assert_eq!(notices.len(), 1);
@@ -1148,12 +1148,10 @@ mod tests {
     fn a_key_that_is_absent_or_malformed_is_not_used() {
         let root = root_for(Some(1));
         let file = root.path().join("local-connect/key");
+        // The last decodes, but to 33 bytes rather than 32.
         for bad in ["", "short", "!!!!", &"a".repeat(44)] {
             std::fs::write(&file, bad).unwrap();
-            assert!(
-                read_key(root.path()).is_err() || bad == "a".repeat(44),
-                "{bad:?}"
-            );
+            assert!(read_key(root.path()).is_err(), "{bad:?}");
         }
         std::fs::remove_file(&file).unwrap();
         assert!(read_key(root.path()).unwrap_err().contains("v0.26.2"));
