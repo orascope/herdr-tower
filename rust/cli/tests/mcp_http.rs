@@ -103,10 +103,12 @@ fn agent() -> ureq::Agent {
     ureq::Agent::config_builder()
         .http_status_as_error(false)
         .max_redirects(0)
-        .timeout_global(Some(Duration::from_secs(10)))
         .build()
         .into()
 }
+
+/// How long a request may take before its test fails.
+const REPLY_DEADLINE: Duration = Duration::from_secs(10);
 
 struct Reply {
     status: u16,
@@ -115,6 +117,14 @@ struct Reply {
     body: String,
 }
 
+/// One request, given [`REPLY_DEADLINE`] from outside rather than a timeout on
+/// the agent.
+///
+/// A timeout sets `SO_RCVTIMEO` on the socket, and on Linux a read under it fails
+/// with `EINTR` once the process is stopped and resumed, with no signal handler
+/// involved. ureq hands that back as an error, and resending is no answer: the
+/// server may already have acted on a request these tests count. Without the
+/// timeout the read is restarted by the kernel.
 fn send(
     a: &ureq::Agent,
     method: &str,
@@ -122,18 +132,42 @@ fn send(
     headers: &[(&str, &str)],
     body: Option<(&str, String)>,
 ) -> Reply {
+    let (a, method, url) = (a.clone(), method.to_string(), url.to_string());
+    let headers: Vec<(String, String)> = headers
+        .iter()
+        .map(|(n, v)| (n.to_string(), v.to_string()))
+        .collect();
+    let body = body.map(|(ctype, body)| (ctype.to_string(), body));
+    let (reply, replied) = std::sync::mpsc::channel();
+    // Not scoped: a server that hangs is killed when the panic below drops it,
+    // and a scope would wait for this thread before that could happen.
+    std::thread::spawn(move || {
+        let _ = reply.send(exchange(&a, &method, &url, &headers, body));
+    });
+    replied
+        .recv_timeout(REPLY_DEADLINE)
+        .expect("a response in time")
+}
+
+fn exchange(
+    a: &ureq::Agent,
+    method: &str,
+    url: &str,
+    headers: &[(String, String)],
+    body: Option<(String, String)>,
+) -> Reply {
     let mut resp = match (method, body) {
         ("GET", _) => {
             let mut r = a.get(url);
             for (n, v) in headers {
-                r = r.header(*n, *v);
+                r = r.header(n, v);
             }
             r.call()
         }
         (_, Some((ctype, body))) => {
-            let mut r = a.post(url).header("content-type", ctype);
+            let mut r = a.post(url).header("content-type", &ctype);
             for (n, v) in headers {
-                r = r.header(*n, *v);
+                r = r.header(n, v);
             }
             r.send(body.as_bytes())
         }
@@ -423,16 +457,14 @@ fn serve_without_a_public_url_serves_this_machine() {
         std::thread::sleep(Duration::from_millis(50));
     }
     let meta: Value = serde_json::from_str(
-        &agent()
-            .get(format!(
-                "{}/.well-known/oauth-authorization-server",
-                server.url
-            ))
-            .call()
-            .unwrap()
-            .into_body()
-            .read_to_string()
-            .unwrap(),
+        &send(
+            &agent(),
+            "GET",
+            &format!("{}/.well-known/oauth-authorization-server", server.url),
+            &[],
+            None,
+        )
+        .body,
     )
     .unwrap();
     assert_eq!(meta["issuer"], server.url);
