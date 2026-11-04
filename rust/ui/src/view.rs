@@ -86,6 +86,37 @@ fn sid_column(width: usize) -> bool {
     width >= SID_COLUMN_FROM
 }
 
+/// Below this the list has no room for TASK beside the full columns, so it goes
+/// compact: STATE, the vendor's bar and a TITLE that takes all the rest.
+///
+/// A terminal has no horizontal scrollbar, and a grid wider than the screen would
+/// hide the far side of every row. PANE, the agent's name, TASK and DIR·SINCE are
+/// all on the detail card (`i`), and the bar's colour still says the vendor.
+const COMPACT_BELOW: usize = 90;
+/// The compact tree gutter: the selection marker and one cell.
+const COMPACT_GUTTER: usize = 2;
+
+fn compact(width: usize) -> bool {
+    width < COMPACT_BELOW
+}
+
+/// TITLE's cell in the compact list: what is left after the gutter, STATE and
+/// its space, and the bar and its space.
+fn compact_title(width: usize) -> usize {
+    width.saturating_sub(COMPACT_GUTTER + W_STATE + 1 + 2)
+}
+
+/// The start of a compact row: the short gutter, STATE, the bar.
+fn compact_lead(gutter: &str, state: Vec<Span<'static>>, kind: &str) -> Vec<Span<'static>> {
+    let gutter: String = gutter.chars().take(COMPACT_GUTTER).collect();
+    let mut spans = vec![Span::styled(gutter, theme::header())];
+    spans.extend(state);
+    spans.push(Span::raw(" "));
+    let [bar, _] = theme::vendor_spans(kind, String::new());
+    spans.extend([bar, Span::raw(" ")]);
+    spans
+}
+
 /// What an empty TITLE or TASK cell says. Blank read as a rendering fault, and
 /// a row whose cells are all blank could not be told from a half-drawn one.
 const NOT_KNOWN: &str = "N/A";
@@ -246,10 +277,18 @@ pub fn header_lines(app: &App) -> Vec<Line<'static>> {
         first.push(indicator);
     }
     // The machine's own load, in the usage board's meters: how busy the
-    // machine running the agents is, beside what they are doing.
+    // machine running the agents is, beside what they are doing. Whole or not
+    // at all: half a meter cut at the edge reads as a broken one.
     if let Some(host) = host_spans(app.host_load(), theme::header()) {
-        first.push(Span::styled("  ·  ", theme::help()));
-        first.extend(host);
+        let separator = Span::styled("  ·  ", theme::help());
+        let wide = crate::text::line_width(&Line::from(first.clone()))
+            + separator.width()
+            + crate::text::line_width(&Line::from(host.clone()));
+        let screen = usize::from(app.size().0);
+        if screen == 0 || wide <= screen {
+            first.push(separator);
+            first.extend(host);
+        }
     }
     if let Some(warning) = fable_warning(app) {
         first.push(Span::styled("  ·  ", theme::help()));
@@ -390,6 +429,16 @@ fn host_spans(load: crate::app::HostLoad, label: Style) -> Option<Vec<Span<'stat
 /// workspace SESSION, and `info` looks one up by it, so this column does not
 /// borrow that name.
 pub fn column_header(width: usize) -> Line<'static> {
+    if compact(width) {
+        return Line::from(Span::styled(
+            format!(
+                "{}{}  TITLE",
+                pad_right("", COMPACT_GUTTER),
+                pad_right("STATE", W_STATE + 1),
+            ),
+            theme::header(),
+        ));
+    }
     let mut text = pad_right("PANE", W_PANE + 1);
     if sid_column(width) {
         text += &pad_right("SID", W_SID + 1);
@@ -489,15 +538,16 @@ fn title_cell(a: &Agent) -> Vec<Span<'static>> {
 /// before the tab and title, which take what is left of the cell. The mark
 /// is what is left of the session tree: rows stay in pane order, and who
 /// works under whom is read here.
-fn worker_title_cell(a: &Agent, coordinator: &str) -> Vec<Span<'static>> {
+fn worker_title_cell(a: &Agent, coordinator: &str, cell: usize) -> Vec<Span<'static>> {
+    let room = cell.saturating_sub(2);
     let mark = format!("↳{coordinator} ");
-    let mark = truncate_width(&mark, W_TITLE_TEXT, "…");
+    let mark = truncate_width(&mark, room, "…");
     let shift = text_width(&mark);
     let mut spans = vec![Span::styled(mark, theme::header())];
     spans.extend(title_cell_in(
         a,
-        W_TITLE.saturating_sub(shift),
-        W_TITLE_TEXT.saturating_sub(shift),
+        cell.saturating_sub(shift),
+        room.saturating_sub(shift),
     ));
     spans
 }
@@ -557,6 +607,16 @@ fn state_spans(label: impl Into<String>, state: AgentState) -> Vec<Span<'static>
 
 /// One agent's row, before any selection styling.
 fn row_with_gutter(app: &App, a: &Agent, gutter: String, width: usize) -> Line<'static> {
+    if compact(width) {
+        let state = state_spans(state_label(a, app.now()), a.state);
+        let mut spans = compact_lead(&gutter, state, &a.kind);
+        let cell = compact_title(width);
+        match app.coordinator_of(a) {
+            Some(c) => spans.extend(worker_title_cell(a, c, cell)),
+            None => spans.extend(title_cell_in(a, cell, cell.saturating_sub(2))),
+        }
+        return Line::from(spans);
+    }
     let mut spans = vec![Span::styled(gutter, theme::header())];
     spans.extend(state_spans(state_label(a, app.now()), a.state));
     spans.push(Span::raw(" "));
@@ -573,7 +633,7 @@ fn row_with_gutter(app: &App, a: &Agent, gutter: String, width: usize) -> Line<'
         ]);
     }
     match app.coordinator_of(a) {
-        Some(c) => spans.extend(worker_title_cell(a, c)),
+        Some(c) => spans.extend(worker_title_cell(a, c, W_TITLE)),
         None => spans.extend(title_cell(a)),
     }
     spans.extend([Span::raw(" "), cell(a.assignment(), W_TASK, W_TASK_TEXT)]);
@@ -969,7 +1029,7 @@ pub fn rows(app: &App, width: usize) -> RowLines {
         next_agent += 1;
         let window = |a: &Agent| a.pane.window;
         let line = row_with_gutter(app, a, tree_gutter(app.agents(), i, &window), width);
-        let line = if rooted {
+        let line = if rooted && !compact(width) {
             branch(if in_last { "  " } else { "│ " }, line, width)
         } else {
             line
@@ -1070,6 +1130,17 @@ fn remote_loop_badge(state: &str) -> (String, bool) {
 /// herdr there.
 fn remote_row(a: &crate::RemoteAgent, gutter: &str, width: usize, stale: bool) -> Line<'static> {
     let (label, state) = remote_state(&a.status);
+    if compact(width) {
+        let mut spans = compact_lead(gutter, state_spans(label, state), &a.agent);
+        let cell = compact_title(width);
+        let title = truncate_width(
+            &tab_and_title(&a.tab, &a.title),
+            cell.saturating_sub(2),
+            "…",
+        );
+        spans.push(Span::styled(pad_right(&title, cell), theme::pane_title()));
+        return dim_if_stale(spans, stale);
+    }
     let mut spans = vec![Span::styled(gutter.to_string(), theme::header())];
     spans.extend(state_spans(label, state));
     spans.push(Span::raw(" "));
@@ -1083,15 +1154,7 @@ fn remote_row(a: &crate::RemoteAgent, gutter: &str, width: usize, stale: bool) -
         let sid: String = a.session_id.chars().take(W_SID).collect();
         spans.extend([cell(&sid, W_SID, W_SID_TEXT), Span::raw(" ")]);
     }
-    // `tab›name`, as the local rows put it.
-    // A tab named after its only pane says it once, as herdr's navigator does.
-    let title = match (a.tab.is_empty(), a.title.is_empty()) {
-        (false, false) if a.tab == a.title => a.title.clone(),
-        (false, false) => format!("{}›{}", a.tab, a.title),
-        (false, true) => a.tab.clone(),
-        _ => a.title.clone(),
-    };
-    let title = truncate_width(&title, W_TITLE_TEXT, "…");
+    let title = truncate_width(&tab_and_title(&a.tab, &a.title), W_TITLE_TEXT, "…");
     spans.push(Span::styled(
         pad_right(&title, W_TITLE),
         theme::pane_title(),
@@ -1114,16 +1177,33 @@ fn remote_row(a: &crate::RemoteAgent, gutter: &str, width: usize, stale: bool) -
         spans.push(Span::raw(" "));
         spans.push(Span::styled(text, theme::model()));
     }
-    // The last read of a machine that stopped answering: all of it dim, so
-    // nobody takes it for the state of things now.
-    if stale {
-        let dim = Style::default().fg(theme::DEAD);
-        spans = spans
+    dim_if_stale(spans, stale)
+}
+
+/// `tab›name`, as the local rows put it. A tab named after its only pane says it
+/// once, as herdr's navigator does.
+fn tab_and_title(tab: &str, title: &str) -> String {
+    match (tab.is_empty(), title.is_empty()) {
+        (false, false) if tab == title => title.to_string(),
+        (false, false) => format!("{tab}›{title}"),
+        (false, true) => tab.to_string(),
+        _ => title.to_string(),
+    }
+}
+
+/// The last read of a machine that stopped answering: all of it dim, so nobody
+/// takes it for the state of things now.
+fn dim_if_stale(spans: Vec<Span<'static>>, stale: bool) -> Line<'static> {
+    if !stale {
+        return Line::from(spans);
+    }
+    let dim = Style::default().fg(theme::DEAD);
+    Line::from(
+        spans
             .into_iter()
             .map(|s| Span::styled(s.content, dim))
-            .collect();
-    }
-    Line::from(spans)
+            .collect::<Vec<_>>(),
+    )
 }
 
 /// Each machine herdr has saved as a root of the tree, `@gpu`, its
@@ -1249,6 +1329,20 @@ fn remote_sections(
 /// dim, in the remote rows' columns: `? unseen  w3:p1  Claude Code  not an
 /// agent to herdr — under sudo/su?`. Never selected: nothing there answers.
 fn unseen_row(p: &crate::UnseenPane, gutter: &str, width: usize) -> Line<'static> {
+    let dim = Style::default().fg(theme::DEAD);
+    if compact(width) {
+        let cell = compact_title(width);
+        let title = truncate_width(
+            &tab_and_title(&p.tab, &p.title),
+            cell.saturating_sub(2),
+            "…",
+        );
+        let gutter: String = gutter.chars().take(COMPACT_GUTTER).collect();
+        return Line::styled(
+            format!("{gutter}{}   {title}", pad_right("? unseen", W_STATE)),
+            dim,
+        );
+    }
     let mut spans = vec![
         Span::raw(gutter.to_string()),
         Span::raw(pad_right("? unseen", W_STATE)),
@@ -1261,14 +1355,8 @@ fn unseen_row(p: &crate::UnseenPane, gutter: &str, width: usize) -> Line<'static
     if sid_column(width) {
         spans.push(Span::raw(" ".repeat(W_SID + 1)));
     }
-    let title = match (p.tab.is_empty(), p.title.is_empty()) {
-        (false, false) if p.tab == p.title => p.title.clone(),
-        (false, false) => format!("{}›{}", p.tab, p.title),
-        (false, true) => p.tab.clone(),
-        _ => p.title.clone(),
-    };
     spans.push(Span::raw(pad_right(
-        &truncate_width(&title, W_TITLE_TEXT, "…"),
+        &truncate_width(&tab_and_title(&p.tab, &p.title), W_TITLE_TEXT, "…"),
         W_TITLE,
     )));
     spans.push(Span::raw(if p.other_user {
@@ -1276,7 +1364,6 @@ fn unseen_row(p: &crate::UnseenPane, gutter: &str, width: usize) -> Line<'static
     } else {
         " not an agent to herdr"
     }));
-    let dim = Style::default().fg(theme::DEAD);
     Line::from(
         spans
             .into_iter()
