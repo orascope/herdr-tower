@@ -59,6 +59,8 @@ is the herdr pane coordinate (`w1:p2`). SID is eight characters of the CLI's
 session ID — the head, or for codex's time-ordered IDs, whose head is a
 timestamp shared by workers started together, the tail; a screen narrower than
 140 columns drops it, and the detail card (`i`) shows the selected pane's.
+Below 90 columns the list goes compact: **STATE · the vendor's bar · TITLE**, with
+TITLE taking all the rest. The other columns are on the detail card.
 A codex whose hooks never fire (codex runs only the hooks trusted through its
 `/hooks`) still gets its SID within half a minute: the supervisor reads it from
 the process's arguments (`codex resume <id>`) or else from the rollout codex is
