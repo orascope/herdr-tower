@@ -20,6 +20,7 @@ Commands:
   restore        revive dead sessions in bulk — pick from a checklist  [--resume the conversation too] [--yes all] [--dry-run] [id ...]  (bots started at login are left out)
   loop <command> continue one opted-in session after 10m idle  (start·stop·list·done·blocked; 168h lifetime, unlimited sends)
   board <command>  what an advisor handed to which worker — a wt task or a pane — with each one's progress  (add·send·assign·next·prio·move·link·wake·done·drop·note·rm·prune·clear·show·open)
+  parallax wake  name a pane to wake when Parallax handoffs are ready for review, while it is idle; off until asked  (on·off·show)
   tree [link|unlink]  who works under whom in the session list; link a pane under a coordinator (moved into its workspace when it is in another)
   schedule       send a message at a set time, once or every day — waits for a busy agent  (list·add·close·wake·rm; `schedule close 19:00`)
   wake-all       tell every session to carry on  [--yes] [--except name,..] [--watch] [--timeout 10m]
