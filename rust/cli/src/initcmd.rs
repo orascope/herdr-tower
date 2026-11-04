@@ -178,7 +178,7 @@ fn install_json_hooks(
     if let Some(raw) = &raw {
         settingsfile::backup(settings_path, BAK_SUFFIX, raw, 0o600)?;
     }
-    let mut body = tower_discord::to_sorted_json_pretty(&Value::Object(settings))?;
+    let mut body = settingsfile::to_sorted_json_pretty(&Value::Object(settings))?;
     body.push(b'\n');
     settingsfile::create_parent(settings_path)?;
     settingsfile::write_atomic(settings_path, TMP_SUFFIX, &body, 0o600)

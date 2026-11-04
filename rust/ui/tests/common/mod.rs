@@ -332,11 +332,9 @@ pub fn settings(home: &std::path::Path) -> Settings {
     Settings {
         version: "v-test".into(),
         preview_interval: std::time::Duration::from_secs(1),
-        channel_labels: HashMap::new(),
         exe: "herdr-tower".into(),
         resume: ResumePaths::under(home),
-        // Empty: no `bots.json`, no unit directories, so nothing is ever found
-        // wired. Tests that care set the map on the app instead.
+        // Empty: no `bots.json`, no unit directories, so nothing is ever found.
         wiring: tower_wiring::Paths::default(),
         // Nothing found unless a test puts it in the temp home: a `lazygit` in
         // this machine's /opt/homebrew/bin must not change what a key does.

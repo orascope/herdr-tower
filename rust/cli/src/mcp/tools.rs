@@ -2851,11 +2851,10 @@ pub fn shell_words(args: &[String]) -> String {
         .join(" ")
 }
 
-/// What an audit line and the notification channel keep of a `tower`
-/// command line: [`shell_words`], with the value of a `config set` replaced
-/// by `<redacted>`. A value set over MCP can be a webhook URL or another
-/// secret, and the audit log and the channel are read by more eyes than
-/// `config.json` (#27).
+/// What an audit line and a notification keep of a `tower` command line:
+/// [`shell_words`], with the value of a `config set` replaced by `<redacted>`.
+/// A value set over MCP can be a secret, and the audit log and the screen are
+/// read by more eyes than `config.json` (#27).
 pub fn tower_words(argv: &[String]) -> String {
     if argv.first().map(String::as_str) != Some("config") {
         return shell_words(argv);
@@ -2884,9 +2883,9 @@ pub fn tower_words(argv: &[String]) -> String {
 
 /// Settings `tower` may not change: the remote MCP server's own
 /// (`mcp.*`: who may register, where it is published, whether act is on,
-/// whether acts are announced) and where notifications go and whether they
-/// are sent (`notify_*`, the webhooks) — the channel that would show the
-/// change.
+/// whether acts are announced) and whether notifications are sent (`notify_*`)
+/// — what would show the change. `webhook` keeps covering the retired URLs an
+/// older `config.json` still holds, and any setting of that kind to come.
 fn guarded_setting(key: &str) -> bool {
     key == "mcp" || key.starts_with("mcp.") || key.starts_with("notify_") || key.contains("webhook")
 }
@@ -2897,14 +2896,13 @@ fn guarded_setting(key: &str) -> bool {
 /// included the ones that administer the server itself: `mcp pair` printed a
 /// pairing code it could approve a new grant with, which survived revoking
 /// the first; `config set mcp.redirect_uris` and `mcp on` moved the server;
-/// `config set notify_discord false` silenced the channel that would show
-/// any of it (#26). A short-lived foothold — a prompt injected into a model
+/// turning notifications off silenced what would show any of it (#26). A short-lived foothold — a prompt injected into a model
 /// with act, an access token that leaked for its hour — became lasting
 /// access. These are for the person at the Mac:
 ///
 /// - every `mcp …` command;
 /// - `config set` / `config unset` of `mcp.*`, `notify_*` and the webhooks,
-///   and `config --reveal`, which would print the webhooks;
+///   and `config --reveal`, which would print an older file's webhook URLs;
 /// - `init` and `daemon` other than `daemon status`, which rewrite the
 ///   service definition and the agents' hooks.
 ///
@@ -2919,13 +2917,13 @@ pub fn tower_refusal(argv: &[String]) -> Option<String> {
         "mcp" => "`mcp` commands administer this server (pairing codes, grants, on/off)",
         "init" => "`init` rewrites the service and the agents' hooks",
         "daemon" if rest != ["status"] => "`daemon` rewrites or restarts the supervisor's service",
-        "config" if rest.contains(&"--reveal") => "`config --reveal` prints the webhook URLs",
+        "config" if rest.contains(&"--reveal") => "`config --reveal` prints retired webhook URLs",
         "config" => {
             let words: Vec<&str> = rest.into_iter().filter(|w| *w != "--reveal").collect();
             match words.as_slice() {
                 [verb @ ("set" | "unset"), key, ..] if guarded_setting(key) => {
                     return Some(format!(
-                        "`config {verb} {key}` changes the remote MCP server or where its notifications go, so it cannot be run through the tower tool. Ask the user to run it on the Mac."
+                        "`config {verb} {key}` changes the remote MCP server or its notifications, so it cannot be run through the tower tool. Ask the user to run it on the Mac."
                     ));
                 }
                 _ => return None,
@@ -5514,7 +5512,8 @@ mod tests {
                 "https://evil.example/cb"
             ]),
             json!(["config", "unset", "mcp.notify_acts"]),
-            json!(["config", "set", "notify_discord", "false"]),
+            json!(["config", "set", "notify_macos", "false"]),
+            json!(["config", "unset", "discord_webhook_url"]),
             json!([
                 "config",
                 "set",
@@ -5588,7 +5587,7 @@ mod tests {
             (json!(["config", "set", "mcp.act"]), true),
             (json!(["config", "unset", "mcp.enabled"]), true),
             (json!(["config", "set", "mcp.nonexistent", "x"]), true),
-            (json!(["config", "set", "channel_labels", "x"]), false),
+            (json!(["config", "set", "preview_interval", "x"]), false),
             (json!(["config", "set", "mcpish", "x"]), false),
             (json!(["config", "set", "slack_webhook", "x"]), true),
             (json!(["config", "set", "--reveal"]), true),
@@ -5636,12 +5635,7 @@ mod tests {
             .filter(|k| guarded_setting(k))
             .collect();
         guarded.sort();
-        let mut want = vec![
-            "discord_webhook_url",
-            "notify_webhook_url",
-            "notify_macos",
-            "notify_discord",
-        ];
+        let mut want = vec!["notify_macos"];
         want.extend(
             tower_config::keys::KEYS
                 .iter()
@@ -5650,7 +5644,7 @@ mod tests {
         );
         want.sort();
         assert_eq!(guarded, want);
-        assert!(want.len() >= 10, "{want:?}");
+        assert!(want.len() >= 8, "{want:?}");
         for k in tower_config::keys::KEYS {
             let refused = tower_refusal(&strings(&json!(["config", "set", k.name, "v"])));
             assert_eq!(refused.is_some(), guarded_setting(k.name), "{}", k.name);
@@ -5694,7 +5688,7 @@ mod tests {
             "--reveal",
             "mcp.act",
             "mcp.public_url",
-            "notify_discord",
+            "notify_macos",
             "discord_webhook_url",
             "wait_renotify",
             "true",
@@ -5755,12 +5749,12 @@ mod tests {
         run(
             &src,
             "tower",
-            json!({"args":["config","set","channel_labels","{\"1\":\"secret\"}"]}),
+            json!({"args":["config","set","preview_interval","secret"]}),
         )
         .unwrap();
         let e = &src.audited.lock().unwrap()[0];
-        assert_eq!(e.text, "config set channel_labels <redacted>");
-        assert!(!audit::announced(e), "and it is not posted at all");
+        assert_eq!(e.text, "config set preview_interval <redacted>");
+        assert!(!audit::announced(e), "and it is not announced at all");
     }
 
     #[test]

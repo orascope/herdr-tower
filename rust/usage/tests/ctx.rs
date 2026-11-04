@@ -905,7 +905,7 @@ fn a_kept_cache_answers_every_pass_what_a_fresh_read_would() {
         })
         .collect();
 
-    // xorshift64*, as in `tower_discord`'s properties: the output multiply is
+    // xorshift64*: the output multiply is
     // the crate convention, and the append below is where the randomness has to
     // land — which pass writes to which rollout is the thing no fixed schedule
     // should decide.

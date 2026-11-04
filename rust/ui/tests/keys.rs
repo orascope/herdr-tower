@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 
 use common::*;
 use tower_state::{AgentState, DaemonBackend, DaemonSnapshot, LoopStore, DEFAULT_LOOP_MESSAGE};
-use tower_ui::{Action, Event, LocalInfo, Pending, Screen};
+use tower_ui::{Action, Event, Pending, Screen};
 
 #[test]
 fn the_cursor_stops_at_both_ends() {
@@ -851,21 +851,6 @@ fn a_fresh_supervisor_heartbeat_records_a_live_herdr_connection() {
     assert!(f.app.watching());
     assert_eq!(f.app.version(), "v-daemon");
     assert_eq!(f.app.backend_count(), 2);
-}
-
-#[test]
-fn local_readings_reach_the_rows() {
-    let mut f = fixture();
-    let mut wired = HashMap::new();
-    wired.insert("collab-bot".to_string(), "⌁".to_string());
-    f.feed(Event::Local(LocalInfo {
-        wired,
-        ..Default::default()
-    }));
-    assert_eq!(
-        f.app.local().wired.get("collab-bot").map(String::as_str),
-        Some("⌁")
-    );
 }
 
 /// A key release is not a key press. Terminals speaking the kitty keyboard

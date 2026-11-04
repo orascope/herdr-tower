@@ -887,9 +887,9 @@ pub(crate) mod tests {
     fn an_occupied_slot_is_never_restored_into_even_when_named() {
         let d = tempfile::tempdir().unwrap();
         let dir = d.path().to_str().unwrap();
-        let agents = vec![dead_agent("claude-1", "claude", "claude-discord", 0, dir)];
+        let agents = vec![dead_agent("claude-1", "claude", "claude-bot", 0, dir)];
         let exists = |_: &str| true;
-        let taken = |session: &str, cwd: &str| session == "claude-discord" && cwd == dir;
+        let taken = |session: &str, cwd: &str| session == "claude-bot" && cwd == dir;
         let env = RestoreEnv {
             session_exists: Some(&exists),
             pane_at: Some(&taken),

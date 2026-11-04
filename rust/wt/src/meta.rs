@@ -83,16 +83,25 @@ impl Meta {
     }
 }
 
-/// Worktree folder to the branch it is on now, for every task — the map the
-/// `⎇` labels are drawn from.
+/// Worktree folder to the branch it is on now, for the tasks in `folders` —
+/// the map the `⎇` labels are drawn from.
+///
+/// Only those. A label is looked up by an agent's folder, so a finished task's
+/// worktree is nobody's label, and the records outlive their worktrees by the
+/// hundreds. Reading each one's `.git` on every refresh costs a file read per
+/// old task, and where worktrees live on an external volume it asks macOS for
+/// access to that volume on behalf of work that ended long ago.
 ///
 /// An unreadable state directory is an empty map: a branch is a label, and
 /// no screen should fail over one.
-pub fn live_branches(state_dir: &Path) -> std::collections::HashMap<String, String> {
+pub fn live_branches(
+    state_dir: &Path,
+    folders: &std::collections::HashSet<&str>,
+) -> std::collections::HashMap<String, String> {
     list_metas(state_dir)
         .unwrap_or_default()
         .into_iter()
-        .filter(|m| !m.path.is_empty())
+        .filter(|m| !m.path.is_empty() && folders.contains(m.path.as_str()))
         .map(|m| {
             let branch = m.live_branch();
             (m.path, branch)
@@ -338,16 +347,17 @@ mod tests {
         assert_eq!(m.live_branch(), "agent/gone");
     }
 
-    /// `live_branches` has one entry per record with a path — none for a
-    /// record without one, none for an empty or missing state directory —
-    /// and each entry is that record's live branch.
+    /// `live_branches` has one entry per asked-for record with a path — none for
+    /// a record without one, none for an empty or missing state directory — and
+    /// each entry is that record's live branch.
     #[test]
-    fn live_branches_has_one_entry_per_record_with_a_path() {
+    fn live_branches_has_one_entry_per_asked_for_record_with_a_path() {
         let missing = tempfile::tempdir().unwrap();
-        assert!(live_branches(&missing.path().join("nope")).is_empty());
+        let none = std::collections::HashSet::new();
+        assert!(live_branches(&missing.path().join("nope"), &none).is_empty());
 
         let d = tempfile::tempdir().unwrap();
-        assert!(live_branches(d.path()).is_empty());
+        assert!(live_branches(d.path(), &none).is_empty());
 
         let repo = crate::git::tests::fixture_repo();
         let repo_path = repo.path().to_str().unwrap().to_string();
@@ -366,7 +376,12 @@ mod tests {
             save_meta(d.path(), m).unwrap();
         }
 
-        let got = live_branches(d.path());
+        let folders = std::collections::HashSet::from([
+            moved_path.as_str(),
+            "/nonexistent/herdr-tower/wt/gone",
+            "",
+        ]);
+        let got = live_branches(d.path(), &folders);
         assert_eq!(got.len(), 2, "{got:?}");
         assert_eq!(
             got.get(&moved_path).map(String::as_str),
@@ -389,6 +404,48 @@ mod tests {
                 "each entry is the record's live branch"
             );
         }
+    }
+
+    /// A record no agent is in is neither returned nor read: its worktree may
+    /// sit on a volume nobody should be asking macOS about.
+    ///
+    /// Its `.git` is a FIFO, so reading it would block until something writes,
+    /// and nothing does: the answer arrives only if the file was left alone. The
+    /// asked-for record beside it still answers, by way of its recorded branch.
+    #[cfg(unix)]
+    #[test]
+    fn a_record_for_a_folder_nobody_is_in_is_neither_returned_nor_read() {
+        let d = tempfile::tempdir().unwrap();
+        let finished = tempfile::tempdir().unwrap();
+        let fifo = finished.path().join(".git");
+        assert!(std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success());
+
+        let mut old = meta("finished", at(0));
+        old.path = finished.path().to_str().unwrap().to_string();
+        let mut current = meta("current", at(1));
+        current.path = "/nonexistent/herdr-tower/wt/current".into();
+        save_meta(d.path(), &old).unwrap();
+        save_meta(d.path(), &current).unwrap();
+
+        let state = d.path().to_path_buf();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let folders = std::collections::HashSet::from(["/nonexistent/herdr-tower/wt/current"]);
+            let _ = tx.send(live_branches(&state, &folders));
+        });
+        let got = rx
+            .recv_timeout(std::time::Duration::from_secs(20))
+            .expect("the finished task's .git was read");
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert_eq!(
+            got.get("/nonexistent/herdr-tower/wt/current")
+                .map(String::as_str),
+            Some("agent/current")
+        );
     }
 
     #[test]

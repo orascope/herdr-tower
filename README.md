@@ -60,7 +60,7 @@ resident supervisor owns the Herdr socket connections and idle loops; the popup
 is only a client. What herdr already knows — the session it keeps alive, the
 kind of agent, its lifecycle state, its native session ID — is taken as given;
 only what herdr does not know is filled in: context usage, the pinned default
-model, the Discord wiring (⌁), worktree workers, the remote card.
+model, worktree workers.
 
 > **herdr only, written in Rust.** herdr knows what lives inside each pane —
 > the kind of agent, its lifecycle, its session — so the tower never guesses at
@@ -101,8 +101,8 @@ starts. `herdr-tower init` is still yours to run.
 The Linux binaries need glibc 2.28 or newer, so they run on RHEL / Rocky / Alma
 8 (8.10 included) and 9, Ubuntu 20.04 and later, Debian 10 and later, and
 Fedora; they are built in `manylinux_2_28` containers
-(`scripts/build-linux.sh`). On Linux the tower, the hooks, worktrees and
-Discord were verified on Ubuntu 24.04 in a VM. What differs on Linux: desktop
+(`scripts/build-linux.sh`). On Linux the tower, the hooks and worktrees were
+verified on Ubuntu 24.04 in a VM. What differs on Linux: desktop
 notifications only where `notify-send` exists.
 
 ### Windows
@@ -133,7 +133,7 @@ What differs on Windows:
   — forward slashes, no quotes — which Git Bash, `cmd` and PowerShell all run.
 - **`wt test`** runs a task's test command through `cmd /c` (`&&` chains as
   usual) rather than `sh -c`.
-- Not on Windows: desktop notifications and the Discord bot wiring (it reads
+- Not on Windows: desktop notifications and the bot wiring in `info` (it reads
   launchd and systemd files).
 
 [Herdr TUI](https://github.com/herdrdev/herdr) 0.9.0 or newer is required — the running *server*,
@@ -204,14 +204,14 @@ key = "prefix+shift+a"
 type = "pane"
 command = "herdr-tower"
 
-# Context use, the model, Discord wiring, branch and idle loop under each claude
+# Context use, the model, branch and idle loop under each claude
 # agent in herdr's sidebar.
 [ui.sidebar.agents.rows_by_agent]
 claude = [
   ["state_icon", "workspace", "tab"],
   ["agent"],
   [{ token = "$ctx" }, { token = "$model" }],
-  [{ token = "$wired" }, { token = "$branch" }, { token = "$loop" }],
+  [{ token = "$branch" }, { token = "$loop" }],
 ]
 
 # The current workspace stands out in herdr's sidebar. The default theme's row
@@ -253,7 +253,7 @@ out, rows carry no PR number — but a branch named after its issue
 - **Plan usage and a guard** — claude's and codex's five-hour and seven-day
   windows, and a floor below which the tower stops spending them.
   → [Plan usage](docs/usage.md)
-- **Notifications and Discord** — desktop notices and a status card.
+- **Notifications** — desktop notices when an agent finishes or waits.
   → [Notifications](docs/notifications.md)
 - **Driving it from a phone** — a remote MCP server for the Claude app.
   → [Remote MCP](docs/remote-mcp.md)
@@ -290,8 +290,8 @@ changed: [history.md](history.md).
 ## Credits
 
 herdr-tower started from [agentlayer](https://github.com/netwaif/agentlayer)
-by netwaif (MIT): the hook-driven state model, the Discord card and worktree
-handling came from there. herdr-tower has since been rewritten in Rust for
+by netwaif (MIT): the hook-driven state model and worktree handling came from
+there. herdr-tower has since been rewritten in Rust for
 herdr and grown well past that start — the remote MCP server, the plan usage
 guard, scheduled messages and more. agentlayer's notice is
 kept in [`NOTICE`](NOTICE).

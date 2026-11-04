@@ -96,26 +96,17 @@ pub fn run_daemon(args: &[String]) -> Result<()> {
                             );
                         }
                     },
-                    // `outbound_config`, as every other sender: a supervisor
-                    // run against a sandbox store must not remind the user's
-                    // real Discord of its test sessions.
                     still_waiting: |agent: &tower_state::Agent, waited| {
-                        tower_notify::remind(&outbound_config(), &sender, agent, waited);
+                        tower_notify::remind(&tower_config::load(), &sender, agent, waited);
                     },
                     guard: |title: &str, body: &str| {
-                        tower_notify::announce(&outbound_config(), &sender, title, body);
+                        tower_notify::announce(&tower_config::load(), &sender, title, body);
                     },
-                    // The same path as the guard's: a desktop notice and the
-                    // notification channel as the settings allow, with every
-                    // mention switched off — a handoff's title is text an
-                    // agent in another program wrote.
                     parallax: |title: &str, body: &str| {
-                        tower_notify::announce(&outbound_config(), &sender, title, body);
+                        tower_notify::announce(&tower_config::load(), &sender, title, body);
                     },
-                    // Item text is the advisor's words: the same path, with
-                    // mentions off.
                     board: |title: &str, body: &str| {
-                        tower_notify::announce(&outbound_config(), &sender, title, body);
+                        tower_notify::announce(&tower_config::load(), &sender, title, body);
                     },
                 },
                 // Started once this process holds the supervisor lock. A
@@ -123,12 +114,10 @@ pub fn run_daemon(args: &[String]) -> Result<()> {
                 // it; a port already taken ends only that thread.
                 move || {
                     let spawned = [
-                        // The Discord card, refreshed on a timer of this
-                        // process instead of a LaunchAgent that starts one
-                        // every five minutes.
+                        // Context, model and branch on herdr's own sidebar.
                         std::thread::Builder::new()
-                            .name("card".into())
-                            .spawn(super::card::card_timer),
+                            .name("decorate".into())
+                            .spawn(super::sidebar::decorate_timer),
                         // The remote MCP server, unless `mcp off`: a thread of
                         // this process instead of a LaunchAgent of its own.
                         std::thread::Builder::new()
@@ -321,7 +310,6 @@ pub fn run_info(args: &[String]) -> Result<()> {
         return Err(format!("no agent {key:?} — check with herdr-tower status").into());
     };
     let home = home()?;
-    let cfg = tower_config::load();
     let paths =
         tower_wiring::Paths::detect().unwrap_or_else(|| tower_wiring::Paths::for_home(&home));
     let ctx = tower_usage::agent_ctx(
@@ -335,13 +323,12 @@ pub fn run_info(args: &[String]) -> Result<()> {
         .into_iter()
         .find(|m| m.path == a.cwd)
         .map(|m| m.live_branch());
-    let wiring = tower_wiring::collect(&paths, &a.cwd, &a.pane.session, &cfg.channel_labels);
+    let wiring = tower_wiring::collect(&paths, &a.cwd, &a.pane.session);
 
     let d = tower_ui::InfoData {
         agent: a,
         wiring: &wiring,
         ctx: ctx.get(&a.id),
-        labels: &cfg.channel_labels,
         branch: branch.as_deref(),
         unit: tower_cli::infocmd::unit_word(),
     };

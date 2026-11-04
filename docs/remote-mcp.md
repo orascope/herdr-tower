@@ -66,8 +66,8 @@ Nothing is required. `public_url` defaults to this machine's Tailscale name
 (`herdr-tower mcp off`) keeps the supervisor from serving it. `listen` has to be
 a loopback address; the server refuses to start on anything else. `redirect_uris` defaults to claude.ai's
 callbacks. `act: false` takes the act tools away from every connection, whatever
-it was granted. `notify_acts: false` stops posting each action to the
-notification channel.
+it was granted. `notify_acts: false` stops the desktop notification for each
+action.
 
 ### Setting it up, in order
 
@@ -108,10 +108,7 @@ notification channel.
    client registered. `mcp pair` with no id lists the open pages (id, the name each gave
    itself, where it returns to, how long it has been open) and never picks one by
    itself: with one page open it shows it and asks `[y/N]` at a terminal, and with no
-   terminal it only prints the id to use. `--discord` also posts the code to the
-   notification channel, to pair from the phone; it is off unless you ask, since anyone
-   who can read the channel can read the code (`--no-discord`, the old switch, is still
-   accepted and changes nothing).
+   terminal it only prints the id to use.
    - **Leave the box unticked** for a read-only connection: states, screens, `report`,
      schedules, loops, boards and `wait_agent`.
    - **Tick "Also let it send instructions"** for act: `send_prompt`, `open_agent`,
@@ -125,7 +122,7 @@ A connection's rights are fixed when it is approved. To change them, revoke it
 (`herdr-tower mcp revoke <id>`) and pair again. A connection cannot mint another:
 `tower` refuses `mcp pair` and the rest of the server's own commands, so revoking one
 connection is not undone by a grant it made for itself. Every new connection is also
-announced in the notification channel when Discord is on (`🔗 new remote MCP connection:
+announced in a desktop notification (`🔗 new remote MCP connection:
 Claude (act: yes)`), whatever `mcp.notify_acts` says.
 
 The pairing code is the only way in: five minutes, one approval page, one connection.
@@ -145,12 +142,12 @@ all of it.
 
 Every act is recorded: `mcp-audit.jsonl` in the state directory (who, which agent,
 the first 200 characters, what came of it), a line in `report` under "remote
-actions (MCP)", and, when Discord is on, a line in the notification channel
+actions (MCP)", and a desktop notification
 (`📱 send_prompt → api: \`go ahead\` — sent (Claude)`) so an action you did not
 expect shows up where the WAITs arrive. A `tower config set` is kept with its value
-redacted (`config set <key> <redacted>`), and `tower config …` is never posted to the
-channel. A client's name is escaped before it goes to Discord, so it cannot carry
-a link or formatting. A connection may make 30 act calls and
+redacted (`config set <key> <redacted>`), and `tower config …` is never shown in a
+notification. A client's name loses its control characters first, so it cannot fake a
+line. A connection may make 30 act calls and
 300 read calls per ten minutes.
 
 What an agent's screen says is another program's output. The tool descriptions
@@ -168,7 +165,7 @@ takes act away from every connection at once.
 |---|---|
 | `on` / `off` | have the supervisor serve it (the default) / stop it; sets `mcp.enabled` and restarts the supervisor |
 | `serve` | run the server in the foreground, for a machine without the supervisor |
-| `pair [id]` | issue a pairing code for the approval page showing that id: six digits, 5 minutes, one use. With no id it lists the open pages, and uses the only one only after a `y` at a terminal. `--discord` also posts it to the notification channel (`--no-discord` is accepted and is the default) |
+| `pair [id]` | issue a pairing code for the approval page showing that id: six digits, 5 minutes, one use. With no id it lists the open pages, and uses the only one only after a `y` at a terminal |
 | `grants` | list connected clients: id, client name, scopes, when connected, when last used |
 | `revoke <id>` / `revoke --all` | disconnect one client or every one. Calls already in flight are refused from then on |
 

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["herdrx", "text", "state", "scan", "config", "notify", "wiring", "usage", "mux", "hook", "discord", "wt", "ui", "cli", "testrng", "os"]
+members = ["herdrx", "text", "state", "scan", "config", "notify", "wiring", "usage", "mux", "hook", "wt", "ui", "cli", "testrng", "os"]
 
 # Shared by more than one crate, so named once: every crate then asks for the
 # same version by construction rather than by keeping several lines in step.
@@ -12,7 +12,6 @@ members = ["herdrx", "text", "state", "scan", "config", "notify", "wiring", "usa
 # others do not. Paths are relative to this manifest.
 herdrx = { path = "herdrx" }
 tower_config = { path = "config" }
-tower_discord = { path = "discord" }
 tower_hook = { path = "hook" }
 tower_mux = { path = "mux" }
 tower_notify = { path = "notify" }

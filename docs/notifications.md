@@ -1,4 +1,4 @@
-# Notifications and Discord
+# Notifications
 
 [← README](../README.md)
 
@@ -6,29 +6,15 @@
 
 ```json
 {
-  "discord_webhook_url": "https://discord.com/api/webhooks/...",
-  "notify_webhook_url": "https://discord.com/api/webhooks/...",
-  "notify_macos": true,
-  "notify_discord": false
+  "notify_macos": true
 }
 ```
 
 - One notification at the moment an agent **finishes (done)** or starts **waiting
-  (wait)**, and never for a heartbeat — a macOS notification, plus a one-liner to
-  Discord if that is switched on
-- `notify_webhook_url` (optional): sends those one-liners to a separate channel.
-  Left empty, they go to the card's webhook. Separating them keeps the dashboard
-  channel down to a single card with nothing to scroll
-- `herdr-tower card` keeps upserting one Discord message with the agent states.
-  The resident supervisor refreshes it every five minutes by itself, and a hook
-  refreshes it on each state change — nothing needs scheduling. `daemon install`
-  removes a `dev.herdr.tower.card` LaunchAgent left from the days that took one
-  (only the plain `herdr-tower card` job; anything else in it keeps it yours)
-- A run whose `HERDR_TOWER_STATE_DIR` names a store other than the default one
-  (a test, a sandbox) posts neither the card nor the one-liners, unless
-  `HERDR_TOWER_CONFIG` names a config of its own too. The card's message ID
-  lives in the store, so a sandbox would otherwise post a second card to your
-  real channel and orphan it
+  (wait)**, and never for a heartbeat — a desktop notification
+- `daemon install` removes a `dev.herdr.tower.card` LaunchAgent left from an
+  older install (only the plain `herdr-tower card` job; anything else in it keeps
+  it yours)
 - `preview_interval` (optional): how often the TUI preview refreshes, as a
   duration string (`"500ms"`, `"2s"`). Default `1s`, floor 200ms (anything lower
   is raised to it). Independent of the two-second list poll — this moves the
@@ -52,16 +38,34 @@
 
 ```bash
 herdr-tower config keys                        # every setting: its type, when it applies, what it does
-herdr-tower config                             # the file as it is (webhook URLs shown as <hidden>)
+herdr-tower config                             # the file as it is
 herdr-tower config get wait_renotify
-herdr-tower config set wait_renotify 20m       # also: true|false|on|off, 9333, 500ms, a,b,c, {"id":"label"}
+herdr-tower config set wait_renotify 20m       # also: true|false|on|off, 9333, 500ms, a,b,c
 herdr-tower config set mcp.public_url https://mac.tail1234.ts.net
 herdr-tower config unset dock_keep             # back to the default
 ```
 
 Only known settings can be set, each value is parsed by the setting's type, and
 nothing is written unless the result still loads. A file that does not load is
-replaced by the defaults at runtime, webhooks included, so a typo must never reach
-it. Keys a newer version wrote are kept. A new file is `0600`, and an existing one
+replaced by the defaults at runtime, so a typo must never reach it. Keys a newer version wrote are kept. A new file is `0600`, and an existing one
 keeps its mode. Through the MCP `tower` tool the same command works from a phone
 (`["config","set","wait_renotify","off"]`).
+
+### Upgrading from a version with Discord
+
+The Discord card, its notifications and the `⌁` mark are gone, and so are their
+settings. A `config.json` that still holds `discord_webhook_url` or
+`notify_webhook_url` keeps working, but the URLs stay in the file: `doctor` reports
+those keys as unknown, and `herdr-tower config` shows them as `<hidden>`. The URL
+carries the webhook's token, so remove them, and delete the webhook in Discord if
+nothing else uses it:
+
+```bash
+herdr-tower config unset discord_webhook_url
+herdr-tower config unset notify_webhook_url
+herdr-tower config unset notify_discord
+herdr-tower config unset channel_labels
+```
+
+Remove `{ token = "$wired" }` from herdr's sidebar configuration
+if it is there. `discord-card.json` in the state directory is no longer read.

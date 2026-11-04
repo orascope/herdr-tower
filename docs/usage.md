@@ -100,7 +100,7 @@ its floor left:
 - When a hold ends, because the window reset or you lowered the floor, each
   agent that was asked to wait is told it may go on, and why.
 - Holds, releases and floor changes also go to you, not the agents, as a
-  desktop notification and a line in the notification channel:
+  desktop notification:
   `⏸ usage guard: claude held — 5h 18% left ≤ 20%, until 09-24 Thu 21:40`,
   `▶ usage guard: claude released — the floor changed: 5h 20% → 10%`, and
   `🔋 usage guard: claude floors — 5h 25% → 20% · 7d 25% → 30%`.
@@ -168,8 +168,7 @@ take the same colours: green, amber from 50%, red from 80%. The processor's
 share needs two readings, so it appears two seconds after the tower opens.
 Of the default models only one thing is left in the header: `⚠ ▌Claude Fable
 5 default` in red, while Claude's default is pinned to Fable — every new
-session would then run at the top tier. The Discord card still lists all
-three defaults.
+session would then run at the top tier.
 
 **The usage tab (off by default).** Until the tower showed the board, the
 resident supervisor kept a second tab beside the dock's, `🔋 USAGE-GUARD 🔋`,

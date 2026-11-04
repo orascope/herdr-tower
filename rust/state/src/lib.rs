@@ -52,7 +52,7 @@ pub use untrusted::{clean_text, sh_quote, valid_session_id, MAX_SESSION_ID};
 /// Shown in place of a workspace's name when herdr reports none.
 ///
 /// A pane whose workspace is gone still has a record, and every surface that
-/// groups by workspace — the tower's list, the Discord card — has to put those
+/// groups by workspace — the tower's list — has to put those
 /// rows under a heading rather than one with a hole in it. Named once here so
 /// two surfaces cannot drift into two spellings of the same absence.
 pub const NO_WORKSPACE: &str = "(no workspace)";
@@ -568,7 +568,7 @@ impl Agent {
     /// [`headline`], but a pending question takes the line when there is one.
     ///
     /// For a surface with no detail view behind it and no key to press — the
-    /// Discord card, `status` in a terminal or over ssh. A question is the one
+    /// `status` in a terminal or over ssh. A question is the one
     /// thing a reader there cannot get anywhere else, so it is the one thing
     /// that outranks what the pane calls itself; when nothing is being asked
     /// there is no competition for the cell, so the row reads like the tower's,
@@ -594,7 +594,7 @@ impl Agent {
     /// The same candidates as [`headline`], with what needs doing first and what
     /// the pane calls itself behind it. A row can afford to lead with a name
     /// because the state column sits beside it and the detail card is one key
-    /// away; a desktop or Discord notification has neither. Its own title
+    /// away; a desktop notification has neither. Its own title
     /// already says which session and which state, so the body is the only room
     /// left to say *what* — and a permission prompt that arrives on a phone
     /// reading `dbeaver` has spent that room on something the title already

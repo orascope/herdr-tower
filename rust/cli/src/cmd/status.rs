@@ -3,7 +3,6 @@
 
 //! Status command handler.
 
-use std::collections::HashMap;
 use time::OffsetDateTime;
 
 use super::common::*;
@@ -38,19 +37,8 @@ pub fn run_status(args: &[String]) -> Result<()> {
     let now = OffsetDateTime::now_utc();
     sync_panes(&store, now)?;
 
-    // The bot marks are per session and cost a few file stats to resolve. The
-    // JSON form carries the records themselves and has no column to put a mark
-    // in, so it does not pay for them.
-    let wired = if json_out {
-        HashMap::new()
-    } else {
-        let agents = store.list()?;
-        let paths =
-            tower_wiring::Paths::detect().unwrap_or_else(|| tower_wiring::Paths::for_home("."));
-        tower_ui::wired_sessions(&agents, &paths, &tower_config::load().channel_labels)
-    };
     let mut out = std::io::stdout().lock();
-    tower_cli::status(&mut out, &store, json_out, now, &wired)?;
+    tower_cli::status(&mut out, &store, json_out, now)?;
     if !json_out {
         let parallax = tower_state::ParallaxStore::new(store.dir()).read();
         tower_cli::parallax_section(

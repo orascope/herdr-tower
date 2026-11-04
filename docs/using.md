@@ -7,8 +7,7 @@ herdr-tower            # the TUI tower (L edits/starts or stops the selected ses
 herdr-tower status     # a plain table — for SSH and scripts
 herdr-tower status --json
 herdr-tower report     # what each session did in the last 12h: turns, work, time waiting on you (and on what), errors, wt drive verdicts  [--since 30m|12h|2d] [--json]
-herdr-tower config     # read or change config.json: get [key] [--reveal] · set <key> <value> · unset <key> · keys · path (webhooks stay hidden unless --reveal)
-herdr-tower card       # upsert the Discord status card now (the supervisor does it every 5 minutes) / --out prints the JSON only
+herdr-tower config     # read or change config.json: get [key] [--reveal] · set <key> <value> · unset <key> · keys · path
 herdr-tower open ~/proj            # a new tab in that folder with claude started in it — no worktree, no branch  [--agent codex] [--workspace label (created when missing)] [--prompt "hi"] [--json]
 herdr-tower close <agent>          # close its pane (asks first) — refuses one that is working or waiting on you unless --force  [--yes]
 herdr-tower interrupt <agent>      # stop a working agent's turn: presses Escape, and only in a working one
@@ -47,7 +46,7 @@ herdr-tower tree                   # who works under whom in the session list; t
 herdr-tower wake-all   # tell every claude and codex session to carry on
 herdr-tower close-all  # tell them to wrap up, then watch until all are done, then summarise
 herdr-tower broadcast "<message>"  # send any message to all of them (--except leaves some out, --yes skips the prompt)
-herdr-tower info <session>         # the wiring in detail: folder, engine, Discord channel, what started it, how to resume (a workspace, a record id, or a session id)
+herdr-tower info <session>         # the wiring in detail: folder, engine, what started it, how to resume (a workspace, a record id, or a session id)
 herdr-tower dock [--focus]         # run the tower in its own herdr workspace, so a click in the sidebar opens it
 herdr-tower wt ...     # worktree parallel mode (below) — including `wt drive`, which carries tasks to a verdict
 ```

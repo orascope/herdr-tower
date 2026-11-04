@@ -11,21 +11,15 @@
 use tower_config::Config;
 use tower_state::{Agent, AgentState};
 
-/// How a notification reaches the user. Injected so tests never shell out or
-/// touch the network.
+/// How a notification reaches the user. Injected so tests never shell out.
 #[derive(Default)]
 pub struct Sender {
     /// Desktop notification. `None` when the platform has no way to show one.
     pub notify: Option<NotifyFn>,
-    /// Discord webhook POST.
-    pub post_json: Option<PostFn>,
 }
 
 /// Shows a desktop notification: title, then body.
 pub type NotifyFn = Box<dyn Fn(&str, &str) -> std::io::Result<()>>;
-
-/// Posts a JSON body to a webhook URL.
-pub type PostFn = Box<dyn Fn(&str, &[u8]) -> std::io::Result<()>>;
 
 /// Which transitions are worth interrupting someone for.
 ///
@@ -86,24 +80,12 @@ pub fn remind(cfg: &Config, s: &Sender, a: &Agent, waited: std::time::Duration) 
 }
 
 /// A notice about the tower itself rather than one agent — the usage guard
-/// holding or releasing an AI, its floors changing: a desktop notification
-/// and a line in the notification channel, as the settings allow.
+/// holding or releasing an AI, its floors changing: a desktop notification,
+/// as the settings allow.
 pub fn announce(cfg: &Config, s: &Sender, title: &str, body: &str) {
     if cfg.macos_enabled() {
         if let Some(f) = &s.notify {
             let _ = f(title, body);
-        }
-    }
-    if cfg.notify_discord {
-        if let (Some(url), Some(post)) = (cfg.notify_url(), &s.post_json) {
-            let payload = serde_json::json!({
-                "username": "herdr-tower",
-                "content": format!("{title} — {body}"),
-                "allowed_mentions": { "parse": [] },
-            });
-            if let Ok(body) = serde_json::to_vec(&payload) {
-                let _ = post(url, &body);
-            }
         }
     }
 }
@@ -118,8 +100,6 @@ fn deliver(cfg: &Config, s: &Sender, a: &Agent, t: &str) {
     } else {
         a.attention()
     };
-    // Through `announce`, so the agent's own text cannot mention anyone in
-    // the channel either.
     announce(cfg, s, t, body);
 }
 
@@ -144,23 +124,16 @@ mod tests {
     type Log = Rc<RefCell<Vec<String>>>;
 
     /// Records what each channel was asked to send.
-    fn recorder() -> (Sender, Log, Log) {
+    fn recorder() -> (Sender, Log) {
         let desktop = Rc::new(RefCell::new(Vec::new()));
-        let posts = Rc::new(RefCell::new(Vec::new()));
         let d = desktop.clone();
-        let p = posts.clone();
         let s = Sender {
             notify: Some(Box::new(move |t, b| {
                 d.borrow_mut().push(format!("{t}|{b}"));
                 Ok(())
             })),
-            post_json: Some(Box::new(move |url, body| {
-                p.borrow_mut()
-                    .push(format!("{url}|{}", String::from_utf8_lossy(body)));
-                Ok(())
-            })),
         };
-        (s, desktop, posts)
+        (s, desktop)
     }
 
     /// Only what needs a person. Announcing WORKING would train the user to
@@ -178,7 +151,7 @@ mod tests {
     /// A heartbeat is not a transition.
     #[test]
     fn same_state_sends_nothing() {
-        let (s, desktop, _) = recorder();
+        let (s, desktop) = recorder();
         let cfg = Config::default();
         notify(
             &cfg,
@@ -200,7 +173,7 @@ mod tests {
     /// the title already said.
     #[test]
     fn the_body_says_what_needs_doing_not_what_the_pane_is_called() {
-        let (s, desktop, _) = recorder();
+        let (s, desktop) = recorder();
         let cfg = Config {
             notify_macos: Some(true),
             ..Config::default()
@@ -246,7 +219,7 @@ mod tests {
 
     #[test]
     fn desktop_can_be_turned_off() {
-        let (s, desktop, _) = recorder();
+        let (s, desktop) = recorder();
         let cfg: Config = serde_json::from_str(r#"{"notify_macos":false}"#).unwrap();
         notify(
             &cfg,
@@ -258,39 +231,10 @@ mod tests {
         assert!(desktop.borrow().is_empty());
     }
 
-    /// Discord is opt-in, and silent without a webhook even when enabled.
-    #[test]
-    fn discord_needs_both_the_flag_and_a_webhook() {
-        let (s, _, posts) = recorder();
-
-        let flag_only: Config = serde_json::from_str(r#"{"notify_discord":true}"#).unwrap();
-        notify(
-            &flag_only,
-            &s,
-            &agent("dev"),
-            AgentState::Working,
-            AgentState::Waiting,
-        );
-        assert!(posts.borrow().is_empty(), "no webhook configured");
-
-        let both: Config =
-            serde_json::from_str(r#"{"notify_discord":true,"discord_webhook_url":"https://hook"}"#)
-                .unwrap();
-        notify(
-            &both,
-            &s,
-            &agent("dev"),
-            AgentState::Working,
-            AgentState::Waiting,
-        );
-        assert_eq!(posts.borrow().len(), 1);
-        assert!(posts.borrow()[0].contains("needs input"));
-    }
-
     /// A record with no task still says something useful.
     #[test]
     fn body_falls_back_to_the_folder() {
-        let (s, desktop, _) = recorder();
+        let (s, desktop) = recorder();
         notify(
             &Config::default(),
             &s,
@@ -312,7 +256,6 @@ mod tests {
                 log.borrow_mut().push((t.into(), b.into()));
                 Ok(())
             })),
-            post_json: None,
         };
         let mut a = agent("20.herdr-tower");
         a.ask = "Allow bash: ls?".into();
@@ -325,25 +268,5 @@ mod tests {
         let got = seen.borrow();
         assert_eq!(got[0].0, "◆ 20.herdr-tower still needs input (15m)");
         assert_eq!(got[0].1, "Allow bash: ls?");
-    }
-
-    /// The agent's own text goes into the channel, so it can mention no one:
-    /// every post, a transition or a reminder, turns mentions off.
-    #[test]
-    fn a_post_mentions_no_one() {
-        let (s, _, posts) = recorder();
-        let cfg: Config =
-            serde_json::from_str(r#"{"notify_discord":true,"discord_webhook_url":"https://hook"}"#)
-                .unwrap();
-        let mut a = agent("dev");
-        a.ask = "@everyone <@123> look".into();
-        notify(&cfg, &s, &a, AgentState::Working, AgentState::Waiting);
-        remind(&cfg, &s, &a, std::time::Duration::from_secs(900));
-        announce(&cfg, &s, "t", "b");
-        let posts = posts.borrow();
-        assert_eq!(posts.len(), 3);
-        for p in posts.iter() {
-            assert!(p.contains(r#""allowed_mentions":{"parse":[]}"#), "{p}");
-        }
     }
 }

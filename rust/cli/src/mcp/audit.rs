@@ -55,7 +55,7 @@ pub fn kept(text: &str) -> String {
     out
 }
 
-/// The notification-channel line for a remote action:
+/// The notification line for a remote action:
 /// `📱 send_prompt → api: "go ahead" — sent (Claude)`.
 pub fn line(e: &Entry) -> String {
     let place = if e.session.is_empty() {
@@ -71,7 +71,7 @@ pub fn line(e: &Entry) -> String {
     let who = if e.client.is_empty() {
         String::new()
     } else {
-        format!(" ({})", discord_escape(&e.client))
+        format!(" ({})", plain_name(&e.client))
     };
     // A `tower` run has no agent: the command is the whole story.
     let head = if place.is_empty() {
@@ -86,62 +86,31 @@ pub fn line(e: &Entry) -> String {
     }
 }
 
-/// Whether a remote action is announced in the notification channel as well
-/// as written to the log. Not a `tower config …` run: settings are not the
-/// channel's business, and a value set there — a webhook, a URL — is
-/// exactly what should not be posted to it (#27). The audit line keeps the
-/// command, with the value redacted.
+/// Whether a remote action is announced in a desktop notification as well as
+/// written to the log. Not a `tower config …` run: a value set there is exactly
+/// what should not be put on the screen (#27). The audit line keeps the command,
+/// with the value redacted.
 pub fn announced(e: &Entry) -> bool {
     !(e.tool == "tower" && (e.text == "config" || e.text.starts_with("config ")))
 }
 
-/// Text a client chose, made inert for Discord markdown: every character
-/// that could start formatting, a link or a mention is backslash-escaped.
+/// Text a client chose, without its control characters.
 ///
-/// A client's name is whatever it registered with (`/register` is open to
-/// the internet). `allowed_mentions` already keeps it from pinging anyone,
-/// but `[Claude](https://…)` rendered as a link in the channel the person
-/// trusts for these notices (#27). An escaped `:` also keeps a bare URL
-/// from turning into a link.
-pub fn discord_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        if c.is_control() {
-            continue;
-        }
-        if matches!(
-            c,
-            '\\' | '*'
-                | '_'
-                | '~'
-                | '`'
-                | '|'
-                | '>'
-                | '<'
-                | '['
-                | ']'
-                | '('
-                | ')'
-                | '#'
-                | '-'
-                | '@'
-                | ':'
-        ) {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out
+/// A client's name is whatever it registered with (`/register` is open to the
+/// internet), and it reaches a notification and the terminal, where a newline
+/// could fake a second line and an escape sequence could do worse.
+pub fn plain_name(s: &str) -> String {
+    s.chars().filter(|c| !c.is_control()).collect()
 }
 
-/// The notification-channel line for a new grant (#26): a pairing that
+/// The notification line for a new grant (#26): a pairing that
 /// turned into a connection. A connection nobody expected shows up the
 /// moment it exists.
 pub fn grant_line(client: &str, act: bool) -> String {
     let client = if client.is_empty() {
         "(unnamed client)".to_string()
     } else {
-        discord_escape(client)
+        plain_name(client)
     };
     format!(
         "🔗 new remote MCP connection: {client} (act: {}) — `herdr-tower mcp grants` lists it, `mcp revoke <id>` drops it",
@@ -275,7 +244,7 @@ mod tests {
     }
 
     #[test]
-    fn the_channel_line_names_the_place_the_text_and_the_outcome() {
+    fn the_line_names_the_place_the_text_and_the_outcome() {
         let mut e = entry(0, "go ahead\nwith `rm`");
         assert_eq!(
             line(&e),
@@ -381,24 +350,21 @@ mod tests {
         assert_eq!(mode(dir.path()), 0o600, "still private after a trim");
     }
 
-    /// #27: a client's name cannot carry markdown into the channel.
+    /// #27: a client's name is one line of plain text.
     #[test]
-    fn a_client_name_is_inert_in_the_channel() {
+    fn a_client_name_cannot_fake_a_line_or_a_terminal_sequence() {
         let mut e = entry(0, "go");
-        e.client = "[Claude](https://evil.example) **ok** @everyone".into();
+        e.client = "Claude\n\u{1b}[2J📱 send_prompt: `rm`".into();
         let l = line(&e);
-        assert!(
-            l.ends_with(r"(\[Claude\]\(https\://evil.example\) \*\*ok\*\* \@everyone)"),
-            "{l}"
-        );
-        assert_eq!(discord_escape("a_b\n`c`"), r"a\_b\`c\`");
-        assert_eq!(discord_escape("Claude"), "Claude");
+        assert!(!l.contains('\n') && !l.contains('\u{1b}'), "{l}");
+        assert_eq!(plain_name("a_b\n`c`"), "a_b`c`");
+        assert_eq!(plain_name("Claude"), "Claude");
     }
 
-    /// #27: `tower config …` goes to the log, never to the channel.
+    /// #27: `tower config …` goes to the log, never to a notification.
     #[test]
     fn config_runs_are_not_announced() {
-        let mut e = entry(0, "config set notify_webhook_url <redacted>");
+        let mut e = entry(0, "config set mcp.public_url <redacted>");
         e.tool = "tower".into();
         assert!(!announced(&e));
         e.text = "config".into();
@@ -416,6 +382,6 @@ mod tests {
             .starts_with("🔗 new remote MCP connection: Claude (act: yes)"));
         assert!(grant_line("", false)
             .starts_with("🔗 new remote MCP connection: (unnamed client) (act: no)"));
-        assert!(grant_line("*x*", false).contains(r"\*x\*"));
+        assert!(!grant_line("x\ny", false).contains('\n'));
     }
 }

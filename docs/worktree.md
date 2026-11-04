@@ -35,7 +35,7 @@ herdr-tower wt clean auth-api                    # tidy up, keeping anything uns
   the state directory
 - **A worker may move to a branch of its own** (`agent/i-2919` →
   `agent/explain-2969-stage2`). Everything that shows a branch — the tower's
-  `⎇`, herdr's sidebar, the Discord card, a preview window's title, `wt list`
+  `⎇`, herdr's sidebar, a preview window's title, `wt list`
   (`agent/explain-2969-stage2 (cut as agent/i-2919)`) — shows the one checked
   out now, read from the worktree's `HEAD`. `clean` counts unmerged commits on
   both branches, and `merge` names both and merges neither: which one lands is

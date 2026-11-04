@@ -23,7 +23,7 @@
 //!     snapshot. It never talks to Herdr; the supervisor is the sole owner of
 //!     that connection and keeps the shared store current.
 //!   - **local** — the readings that come from reading files: context share,
-//!     the Discord marks, the pinned default models.
+//!     the pinned default models.
 //!   - **preview** — captures the selected pane.
 //!   - **host** — reads the machine's processor and memory for the header.
 //!   - **dock** — keeps the dock workspace at the top of the sidebar, and runs
@@ -42,7 +42,6 @@ use tower_state::{Agent, DaemonStore, Store};
 use tower_usage::DefaultModels;
 
 use crate::app::{Event, HostLoad, LocalInfo, Settings};
-use crate::info::wired_sessions;
 use crate::tower::Tower;
 
 /// How long the popup waits before re-reading the supervisor-owned snapshot.
@@ -357,8 +356,8 @@ fn records_thread(
         failing = failed;
         *shared.agents.lock().unwrap_or_else(|e| e.into_inner()) = handed_on(&agents);
         let sent = tx.send(Event::Records {
+            branches: worktree_branches(&agents),
             agents,
-            branches: worktree_branches(),
             tab_roots: tab_roots.clone(),
             parents: parents.clone(),
             daemon: daemon.map(Box::new),
@@ -423,8 +422,8 @@ fn handed_on(agents: &[Agent]) -> Vec<Agent> {
     agents.iter().filter(|a| a.is_live()).cloned().collect()
 }
 
-/// The readings that come from reading files: context share, the Discord
-/// marks, the pinned default models.
+/// The readings that come from reading files: context share, the pinned default
+/// models.
 ///
 /// Collected together and off the redraw path because none of it is fast enough
 /// to do per frame and all of it is fast enough to do together.
@@ -443,7 +442,6 @@ pub fn collect_local(
     );
     LocalInfo {
         ctx,
-        wired: wired_sessions(agents, &settings.wiring, &settings.channel_labels),
         def_models: Some(DefaultModels::read(&home)),
     }
 }
@@ -633,16 +631,18 @@ fn live_folders(shared: &Shared) -> Vec<String> {
     f
 }
 
-/// Worktree folder to branch, for the `⎇` column and the info card.
+/// Worktree folder to branch, for the `⎇` column and the info card: the folders
+/// of the records on the list, dead ones too, because their rows are labelled.
 ///
 /// Read every refresh rather than cached: `wt new` and `wt clean` change this
-/// while the tower is open, and the file count is the number of live tasks —
-/// single digits, beside a herdr round trip that already happened.
+/// while the tower is open, and the file count is the number of listed agents,
+/// beside a herdr round trip that already happened.
 ///
 /// An unreadable state directory is an empty map, not an error. The branch is a
 /// label; failing a refresh over it would cost the whole screen.
-fn worktree_branches() -> std::collections::HashMap<String, String> {
-    tower_wt::live_branches(&tower_state::default_dir())
+fn worktree_branches(agents: &[Agent]) -> std::collections::HashMap<String, String> {
+    let folders = agents.iter().map(|a| a.cwd.as_str()).collect();
+    tower_wt::live_branches(&tower_state::default_dir(), &folders)
 }
 
 #[cfg(test)]
@@ -914,7 +914,6 @@ mod local_tests {
         let mut cache = tower_usage::CtxCache::default();
         let info = collect_local(&[], &settings, &mut cache);
         assert!(info.ctx.is_empty());
-        assert!(info.wired.is_empty());
         // `Some`, holding nothing — the state the `Option` exists to tell apart
         // from `None`, and the one a bare `is_some()` cannot see, since
         // `collect_local` sets the field on every pass.

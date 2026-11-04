@@ -48,11 +48,8 @@ const KEYS: &[Key] = &[
     ("mcp.public_url", "/mcp/public_url", |k| {
         format!("https://m{k}.t.ts.net")
     }),
-    ("discord_webhook_url", "/discord_webhook_url", |k| {
-        format!("https://discord.com/api/webhooks/{k}/a")
-    }),
-    ("notify_webhook_url", "/notify_webhook_url", |k| {
-        format!("https://discord.com/api/webhooks/{k}/b")
+    ("usage_guard_7d", "/usage_guard_7d", |k| {
+        (30 + k).to_string()
     }),
 ];
 

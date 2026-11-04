@@ -59,24 +59,11 @@ pub fn self_path() -> String {
 
 /// How notifications actually reach a person on this machine.
 ///
-/// `None` for a channel this platform has no way to use, which
-/// `tower_notify::notify` reads as "skip it" rather than as a failure.
+/// `None` on a platform with no way to show one, which `tower_notify::notify`
+/// reads as "skip it" rather than as a failure.
 pub fn notify_sender() -> tower_notify::Sender {
     tower_notify::Sender {
         notify: desktop_notifier(),
-        post_json: Some(Box::new(|url, body| {
-            // Five seconds, because this is called from a hook that is holding
-            // up an agent's turn. A slow webhook must not become the agent's
-            // problem.
-            ureq::post(url)
-                .config()
-                .timeout_global(Some(std::time::Duration::from_secs(5)))
-                .build()
-                .header("content-type", "application/json")
-                .send(body)
-                .map(|_| ())
-                .map_err(std::io::Error::other)
-        })),
     }
 }
 
@@ -181,10 +168,9 @@ pub fn agy_installed(home: &Path) -> bool {
 ///
 /// `FlagSet` stops at the first non-flag word — so a stray word does not merely
 /// go unused, it leaves *every flag after it* at its default.
-/// `card accidental --out` published to the configured Discord webhook
-/// instead of printing, and `init accidental --dry-run` rewrote every detected
-/// CLI's configuration. Both are the quiet opposite of what was asked for, which
-/// is why this refuses rather than warns.
+/// `init accidental --dry-run` rewrote every detected CLI's configuration: the
+/// quiet opposite of what was asked for, which is why this refuses rather than
+/// warns.
 pub fn flags_only(
     name: &str,
     fs: &tower_cli::helpcmd::FlagSet,
@@ -270,32 +256,18 @@ pub fn config_override() -> Result<Option<PathBuf>> {
     Ok(Some(absolute))
 }
 
-/// The config, minus its Discord webhooks when this process runs against a
-/// store of its own.
-///
-/// A store picked with `HERDR_TOWER_STATE_DIR` is a test or a sandbox, but the
-/// config still comes from `~/.config/herdr-tower` unless `HERDR_TOWER_CONFIG`
-/// says otherwise — so its webhooks are the user's real channels. The card's
-/// message ID lives in the store, so a sandbox found none, posted a second
-/// card beside the real one, and orphaned it when the sandbox was deleted;
-/// its transitions reached the notify channel as if they were real. Naming a
-/// config of its own is how a sandbox asks for Discord.
-pub fn outbound_config() -> tower_config::Config {
-    let mut cfg = tower_config::load();
-    if store_is_isolated(
+/// Whether this process runs against a store of its own: a test or a sandbox,
+/// picked with `HERDR_TOWER_STATE_DIR`. What it does must not reach the user's
+/// real panes or screen.
+pub fn store_is_sandboxed() -> bool {
+    store_is_isolated(
         std::env::var_os("HERDR_TOWER_STATE_DIR").as_deref(),
         &tower_state::default_dir(),
         &tower_state::user_dir(),
-        std::env::var_os("HERDR_TOWER_CONFIG").as_deref(),
-    ) {
-        cfg.discord_webhook_url = None;
-        cfg.notify_webhook_url = None;
-    }
-    cfg
+    )
 }
 
-/// Whether the store was pointed somewhere other than the user's own while the
-/// config was left as the user's own.
+/// Whether the store was pointed somewhere other than the user's own.
 ///
 /// Setting `HERDR_TOWER_STATE_DIR` to the default directory — which the
 /// supervisor's service definition does — is not isolation, however it is
@@ -304,10 +276,8 @@ pub fn store_is_isolated(
     state_env: Option<&std::ffi::OsStr>,
     state_dir: &Path,
     user_dir: &Path,
-    config_env: Option<&std::ffi::OsStr>,
 ) -> bool {
-    let set = |v: Option<&std::ffi::OsStr>| v.is_some_and(|v| !v.is_empty());
-    if !set(state_env) || set(config_env) {
+    if state_env.is_none_or(|v| v.is_empty()) {
         return false;
     }
     let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
@@ -400,9 +370,9 @@ pub fn ready_pane_for_launch<'a>(
 mod tests {
     use super::*;
 
-    /// Only a store of its own under the user's own config loses Discord.
+    /// Only a store other than the user's own counts as a sandbox.
     #[test]
-    fn only_a_sandbox_store_under_the_users_config_is_isolated() {
+    fn only_a_store_other_than_the_users_is_isolated() {
         use std::ffi::OsStr;
         let home = tempfile::tempdir().unwrap();
         let user = home.path().join("state");
@@ -410,47 +380,17 @@ mod tests {
         std::fs::create_dir_all(&user).unwrap();
         std::fs::create_dir_all(&sandbox).unwrap();
         let env = |p: &Path| Some(p.as_os_str().to_owned());
-        let cfg = Some(OsStr::new("/elsewhere/config.json"));
 
-        // The incident: a test's store, the user's config.
-        assert!(store_is_isolated(
-            env(&sandbox).as_deref(),
-            &sandbox,
-            &user,
-            None
-        ));
-        // A config of its own asks for whatever webhooks it names.
-        assert!(!store_is_isolated(
-            env(&sandbox).as_deref(),
-            &sandbox,
-            &user,
-            cfg
-        ));
+        // A test's store.
+        assert!(store_is_isolated(env(&sandbox).as_deref(), &sandbox, &user));
         // No override at all is the ordinary run.
-        assert!(!store_is_isolated(None, &user, &user, None));
-        assert!(!store_is_isolated(Some(OsStr::new("")), &user, &user, None));
+        assert!(!store_is_isolated(None, &user, &user));
+        assert!(!store_is_isolated(Some(OsStr::new("")), &user, &user));
         // The supervisor's service definition spells out the default directory.
-        assert!(!store_is_isolated(
-            env(&user).as_deref(),
-            &user,
-            &user,
-            None
-        ));
+        assert!(!store_is_isolated(env(&user).as_deref(), &user, &user));
         // Another spelling of the same directory is still the same directory.
         let dotted = sandbox.join("..").join("state");
-        assert!(!store_is_isolated(
-            env(&dotted).as_deref(),
-            &dotted,
-            &user,
-            None
-        ));
-        // An empty config override is no override.
-        assert!(store_is_isolated(
-            env(&sandbox).as_deref(),
-            &sandbox,
-            &user,
-            Some(OsStr::new(""))
-        ));
+        assert!(!store_is_isolated(env(&dotted).as_deref(), &dotted, &user));
     }
 
     /// What counts as yes, and what does not. 🚨 A prompt this guards sends a

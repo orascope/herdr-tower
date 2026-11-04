@@ -7,32 +7,20 @@
 //! are about the exact text real installers write into plists, systemd units
 //! and their sidecars, so anything less than the real bytes would prove the
 //! test's own assumptions instead.
-// The Discord bot registrations these read are launchd and systemd files;
+// The bot registrations these read are launchd and systemd files;
 // on Windows only the parts that do not need them run.
 #![cfg_attr(not(unix), allow(unused_imports, dead_code))]
 
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
-use tower_wiring::{collect, session_agents, short_id};
-use tower_wiring::{Bridge, Discord, Info, Paths, Registration};
+use tower_wiring::{collect, session_agents};
+use tower_wiring::{Paths, Registration};
 
 fn write(path: &Path, body: &str) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, body).unwrap();
-}
-
-fn labels(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-    pairs
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect()
-}
-
-fn no_labels() -> HashMap<String, String> {
-    HashMap::new()
 }
 
 fn launch_agents_dir(root: &TempDir) -> PathBuf {
@@ -41,8 +29,7 @@ fn launch_agents_dir(root: &TempDir) -> PathBuf {
     dir
 }
 
-/// A macOS-shaped machine: a folder-bot registration, a paired Discord channel
-/// and a plist that starts the bot.
+/// A macOS-shaped machine: a folder-bot registration and a plist that starts the bot.
 fn fixture() -> (TempDir, Paths, String) {
     let root = tempfile::tempdir().unwrap();
     let folder = root.path().join("collab").display().to_string();
@@ -56,17 +43,6 @@ fn fixture() -> (TempDir, Paths, String) {
               "other":  {{"engine": "codex",  "folder": "/x/other",  "session": "other-bot"}}
             }}"#
         ),
-    );
-
-    write(
-        &Path::new(&folder)
-            .join(".discord-state")
-            .join("access.json"),
-        r#"{
-          "dmPolicy": "allowlist",
-          "groups": {"1533823223442182294": {"requireMention": false,
-                                             "allowFrom": ["1062698028051472516"]}}
-        }"#,
     );
 
     let la = launch_agents_dir(&root);
@@ -146,12 +122,7 @@ fn systemd_fixture() -> (TempDir, Paths, String) {
 #[test]
 fn collects_every_source_of_one_agents_wiring() {
     let (_root, paths, folder) = fixture();
-    let info = collect(
-        &paths,
-        &folder,
-        "collab-bot",
-        &labels(&[("1533823223442182294", "collab방")]),
-    );
+    let info = collect(&paths, &folder, "collab-bot");
 
     assert_eq!(
         info.bot,
@@ -161,19 +132,6 @@ fn collects_every_source_of_one_agents_wiring() {
             engine: "claude".into()
         })
     );
-    let d = info.discord.expect("the folder has a .discord-state");
-    assert_eq!(d.dm_policy, "allowlist");
-    assert_eq!(d.channels.len(), 1);
-    assert_eq!(
-        d.channels[0].label.as_deref(),
-        Some("collab방"),
-        "config names the channel"
-    );
-    assert_eq!(
-        d.channels[0].allow_count, 1,
-        "the count is what the card shows, not the IDs"
-    );
-    assert!(!d.channels[0].require_mention);
     assert_eq!(
         info.launch_units,
         ["com.folder-bot.collab"],
@@ -193,12 +151,9 @@ fn missing_sources_collect_to_nothing() {
         },
         "/nonexistent/folder",
         "x",
-        &no_labels(),
     );
     assert!(info.bot.is_none());
-    assert!(info.discord.is_none());
     assert!(info.launch_units.is_empty());
-    assert!(!info.discord_connected());
 }
 
 /// An agent in a worktree runs from a different directory than the one that was
@@ -208,71 +163,35 @@ fn missing_sources_collect_to_nothing() {
 #[test]
 fn a_worktree_still_finds_its_registration_by_session_name() {
     let (_root, paths, _folder) = fixture();
-    let info = collect(&paths, "/some/other/path", "collab-bot", &no_labels());
+    let info = collect(&paths, "/some/other/path", "collab-bot");
     assert_eq!(info.bot.map(|b| b.name).as_deref(), Some("collab"));
 }
 
-#[test]
-fn a_bridge_claims_the_folder_its_env_points_at() {
-    let root = tempfile::tempdir().unwrap();
-    let bridge_dir = root.path().join("codex-discord");
-    let workdir = "/Users/x/codex-workspace";
-    write(
-        &bridge_dir.join(".env"),
-        &format!("TOKEN=x\nCODEX_WORKDIR={workdir}\n"),
-    );
-    // A pid that cannot exist: the card must say "daemon dead", not trust the
-    // file's existence.
-    write(&bridge_dir.join("data").join("daemon.pid"), "999999999");
-
-    let paths = Paths {
-        bridge_roots: vec![bridge_dir.clone()],
-        ..Paths::default()
-    };
-    let info = collect(&paths, workdir, "codex-live", &no_labels());
-    let bridge = info.bridge.clone().expect("the .env points here");
-    assert_eq!(bridge.dir, bridge_dir);
-    assert!(!bridge.alive, "a stale pid file is not a running daemon");
-    assert!(
-        info.discord_connected(),
-        "a bridge is a Discord connection too"
-    );
-
-    assert!(
-        collect(&paths, "/some/other/folder", "", &no_labels())
-            .bridge
-            .is_none(),
-        "a WORKDIR that names another folder claims nothing"
-    );
-}
-
-/// Found in the field: the agent sitting in `~/W` was reported "Discord
-/// connected" because the plist of a bot in `~/W/discord` contains `~/W` as a
-/// prefix. A folder needle has to end at a path boundary.
+/// Found in the field: the agent sitting in `~/W` was reported as started by a
+/// unit because the plist of a bot in `~/W/bot` contains `~/W` as a prefix. A folder needle has to end at a path boundary.
 #[test]
 fn a_parent_folder_does_not_match_its_childs_unit() {
     let root = tempfile::tempdir().unwrap();
     let la = launch_agents_dir(&root);
     write(
-        &la.join("com.jordan.claude-discord.plist"),
-        "<plist>cd /Users/x/VSCodeWorkspace/discord && run</plist>",
+        &la.join("com.jordan.claude-bot.plist"),
+        "<plist>cd /Users/x/VSCodeWorkspace/bot && run</plist>",
     );
     let paths = Paths {
         launch_agents_dir: Some(la),
         ..Paths::default()
     };
 
-    let parent = collect(&paths, "/Users/x/VSCodeWorkspace", "", &no_labels());
+    let parent = collect(&paths, "/Users/x/VSCodeWorkspace", "");
     assert!(
         parent.launch_units.is_empty(),
         "the child's plist is not the parent's"
     );
-    assert!(!parent.discord_connected());
 
-    let exact = collect(&paths, "/Users/x/VSCodeWorkspace/discord", "", &no_labels());
+    let exact = collect(&paths, "/Users/x/VSCodeWorkspace/bot", "");
     assert_eq!(
         exact.launch_units,
-        ["com.jordan.claude-discord"],
+        ["com.jordan.claude-bot"],
         "the owner still matches"
     );
 }
@@ -292,46 +211,8 @@ fn a_very_short_session_name_matches_no_unit() {
         ..Paths::default()
     };
 
-    let info = collect(&paths, "/somewhere", "ai", &no_labels());
+    let info = collect(&paths, "/somewhere", "ai");
     assert!(info.launch_units.is_empty());
-}
-
-/// The `info` card's Discord line also accepts a launch unit whose *name* says
-/// discord — that is often the only trace a hand-installed bot leaves.
-#[test]
-fn a_discord_named_unit_counts_as_a_connection() {
-    let discord_unit = Info {
-        launch_units: vec!["com.jordan.claude-discord".into()],
-        ..Info::default()
-    };
-    assert!(discord_unit.discord_connected());
-
-    let plain = Info {
-        launch_units: vec!["com.folder-bot.x".into()],
-        ..Info::default()
-    };
-    assert!(
-        !plain.discord_connected(),
-        "an unrelated unit is not a Discord connection"
-    );
-}
-
-/// Snowflakes share their leading timestamp bits, so a head-only abbreviation
-/// would show two different channels as the same string.
-#[test]
-fn short_id_keeps_both_ends() {
-    assert_eq!(short_id("1533823223442182294"), "1533…2294");
-    assert_ne!(
-        short_id("1529498215651741706"),
-        short_id("1529494852000022780")
-    );
-    assert_eq!(short_id("abc"), "abc", "nothing to shorten");
-    // Slicing these by byte would cut a character in half; a display helper
-    // must not be able to panic or emit a broken glyph.
-    assert_eq!(
-        short_id("채널아이디가아주긴경우입니다"),
-        "채널아이…우입니다"
-    );
 }
 
 /// restore asks this to find sessions launchd will revive on its own. A card or
@@ -376,12 +257,8 @@ fn session_agents_reports_only_the_unit_that_starts_the_session() {
 #[test]
 fn a_systemd_unit_matches_by_session_name() {
     let (_root, paths, _folder) = systemd_fixture();
-    let info = collect(&paths, "/some/other/path", "collab-bot", &no_labels());
+    let info = collect(&paths, "/some/other/path", "collab-bot");
     assert_eq!(info.launch_units, ["com.folder-bot.collab"]);
-    assert!(
-        info.unit_by_session,
-        "matched by name, which is what the ⌁ mark needs"
-    );
 }
 
 #[test]
@@ -389,12 +266,8 @@ fn a_systemd_unit_matches_by_the_folder_in_its_sidecar() {
     let (_root, paths, folder) = systemd_fixture();
     // The session name deliberately does not match: only the `.up.sh` sidecar
     // carries the folder, and the sub-folder bot must stay out.
-    let info = collect(&paths, &folder, "x", &no_labels());
+    let info = collect(&paths, &folder, "x");
     assert_eq!(info.launch_units, ["com.folder-bot.collab"]);
-    assert!(
-        !info.unit_by_session,
-        "a folder match says nothing about this session"
-    );
 }
 
 #[test]
@@ -408,57 +281,6 @@ fn session_agents_reads_the_systemd_sidecars() {
         session_agents(&paths, "sub-bot").is_empty(),
         "without its .up.sh nothing in the text creates a place"
     );
-}
-
-/// Measured on WSL2, 2026-09-10: the ⌁ mark belongs to the session the
-/// registration names, not to every session opened in the bot's folder.
-#[cfg(unix)]
-#[test]
-fn only_the_registered_session_drives_the_bot() {
-    let (_root, paths, folder) = fixture();
-    assert!(collect(&paths, &folder, "collab-bot", &no_labels()).drives_session("collab-bot"));
-
-    let work = collect(&paths, &folder, "t8", &no_labels());
-    assert!(
-        work.discord_connected(),
-        "the folder itself is still wired, which the card shows"
-    );
-    assert!(
-        !work.drives_session("t8"),
-        "a second session in the bot's folder is not the bot"
-    );
-
-    // Leftover `.discord-state` from a harness proves nothing about a session.
-    let folder_files_only = Info {
-        discord: Some(Discord::default()),
-        ..Info::default()
-    };
-    assert!(!folder_files_only.drives_session("t7b"));
-
-    let by_name = Info {
-        launch_units: vec!["com.jordan.claude-discord".into()],
-        unit_by_session: true,
-        ..Info::default()
-    };
-    assert!(
-        by_name.drives_session("t7b"),
-        "a unit that spells the session out is the bot"
-    );
-
-    let by_path = Info {
-        launch_units: vec!["com.jordan.claude-discord".into()],
-        ..Info::default()
-    };
-    assert!(
-        !by_path.drives_session("t7b"),
-        "a folder-only match is not this session"
-    );
-
-    assert!(Info {
-        bridge: Some(Bridge::default()),
-        ..Info::default()
-    }
-    .drives_session("codex-live"));
 }
 
 /// A unit that creates a place is a launcher; one that only names the binary

@@ -47,7 +47,6 @@ fn run(args: &[String]) -> Result<()> {
         Some("hook") => run_hook(&args[1..]),
         Some("status") => run_status(&args[1..]),
         Some("init") => run_init(&args[1..]),
-        Some("card") => run_card(&args[1..]),
         Some("resume") => run_resume(&args[1..]),
         Some("restore") => run_restore(&args[1..]),
         Some("info") => run_info(&args[1..]),

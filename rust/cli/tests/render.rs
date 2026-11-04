@@ -3,8 +3,6 @@
 
 //! Rendering, against fixed records and a fixed clock.
 
-use std::collections::HashMap;
-
 use time::{Duration, OffsetDateTime};
 use tower_cli::*;
 use tower_state::{Agent, AgentState, Store};
@@ -117,7 +115,7 @@ fn table_columns_line_up_with_cjk_content() {
 
     let (_d, s) = store_with(vec![a, b]);
     let mut out = Vec::new();
-    status(&mut out, &s, false, at(1), &HashMap::new()).unwrap();
+    status(&mut out, &s, false, at(1)).unwrap();
     let text = String::from_utf8(out).unwrap();
 
     let lines: Vec<&str> = text.lines().collect();
@@ -147,7 +145,7 @@ fn the_table_never_prints_a_control_character() {
 
     let (_d, s) = store_with(vec![a]);
     let mut out = Vec::new();
-    status(&mut out, &s, false, at(1), &HashMap::new()).unwrap();
+    status(&mut out, &s, false, at(1)).unwrap();
     let text = String::from_utf8(out).unwrap();
     assert!(
         !text
@@ -162,34 +160,15 @@ fn the_table_never_prints_a_control_character() {
 fn empty_store_says_so() {
     let (_d, s) = store_with(vec![]);
     let mut out = Vec::new();
-    status(&mut out, &s, false, at(0), &HashMap::new()).unwrap();
+    status(&mut out, &s, false, at(0)).unwrap();
     assert!(String::from_utf8(out).unwrap().contains("no agents"));
-}
-
-/// The Discord wiring mark is decided per session, so a working session in a
-/// bot's folder does not get one.
-#[test]
-fn wired_mark_follows_the_session() {
-    let mut a = Agent::new("claude-1", "claude", at(0));
-    a.pane.session = "collab-bot".into();
-    let mut b = Agent::new("claude-2", "claude", at(0));
-    b.pane.session = "dev".into();
-
-    let (_d, s) = store_with(vec![a, b]);
-    let wired = HashMap::from([("collab-bot".to_string(), "⌁테스트방".to_string())]);
-    let mut out = Vec::new();
-    status(&mut out, &s, false, at(0), &wired).unwrap();
-    let text = String::from_utf8(out).unwrap();
-
-    assert!(text.contains("collab-bot ⌁테스트방"));
-    assert!(!text.contains("dev ⌁"), "an unwired session must stay bare");
 }
 
 #[test]
 fn json_output_is_the_records() {
     let (_d, s) = store_with(vec![Agent::new("claude-1", "claude", at(0))]);
     let mut out = Vec::new();
-    status(&mut out, &s, true, at(0), &HashMap::new()).unwrap();
+    status(&mut out, &s, true, at(0)).unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(v[0]["id"], "claude-1");
     assert_eq!(v[0]["state"], "IDLE");

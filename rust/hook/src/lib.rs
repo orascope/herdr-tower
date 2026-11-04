@@ -275,7 +275,7 @@ pub(crate) fn touch(
 /// parser: the task and the question come from four payload shapes, and the
 /// opencode plugin forwards a tool's `metadata.command` verbatim, so an ESC or
 /// OSC sequence in it would otherwise reach every surface that prints a row —
-/// `herdr-tower status`, the notification body, the Discord card. The TUI
+/// `herdr-tower status`, the notification body. The TUI
 /// filters on its own; the plain surfaces do not.
 fn scrub(a: &mut Agent) {
     for field in [&mut a.task, &mut a.ask] {

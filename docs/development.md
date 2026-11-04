@@ -57,7 +57,7 @@ executable.
   and skips itself when there is none. A test that passes without the server
   proves nothing. Calls that move somebody's view (`focus`) and calls that poke an
   agent (`prompt`) are excluded from the tests.
-- **Recorded output.** `status`, `info`, `help` and the card are rendered from
+- **Recorded output.** `status`, `info` and `help` are rendered from
   a fixed store and a pinned clock and compared byte for byte with the
   expectations in **[`rust/expected/`](../rust/expected/README.md)**. Rewriting one
   is `UPDATE_EXPECTED=1 cargo test`, a deliberate act read in the diff.

@@ -25,7 +25,6 @@
 //!   after the supervised vendors rather than sorting alphabetically ahead of
 //!   them.
 
-use std::collections::HashMap;
 use time::OffsetDateTime;
 use tower_cli::status;
 use tower_state::Store;
@@ -89,7 +88,7 @@ fn render(json_out: bool) -> String {
     use_fixture_home();
     let (_d, s) = fixture_store();
     let mut buf = Vec::new();
-    status(&mut buf, &s, json_out, pinned_now(), &HashMap::new()).unwrap();
+    status(&mut buf, &s, json_out, pinned_now()).unwrap();
     String::from_utf8(buf).expect("output is UTF-8")
 }
 
@@ -191,7 +190,7 @@ fn a_renamed_pane_that_is_waiting_still_says_what_it_wants() {
 
     let table = |s: &tower_state::Store| {
         let mut buf = Vec::new();
-        status(&mut buf, s, false, pinned_now(), &HashMap::new()).unwrap();
+        status(&mut buf, s, false, pinned_now()).unwrap();
         String::from_utf8(buf).unwrap()
     };
 
