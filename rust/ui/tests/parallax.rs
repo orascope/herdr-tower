@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ORASCOPE Co.,Ltd. (https://www.orascope.net)
 
-//! Parallax Browser's handoffs in the tower: a count beside WAIT and one line
-//! naming the most urgent, from the supervisor's snapshot and only while it
-//! is fresh.
+//! Parallax Browser's handoffs in the tower: a count beside WAIT, from the
+//! supervisor's snapshot and only while it is fresh.
 
 mod common;
 
 use common::*;
 use time::Duration;
-use tower_state::{AgentState, Attention};
+use tower_state::AgentState;
 use tower_ui::line_text;
 use tower_ui::view::screen_lines;
 use tower_ui::Event;
@@ -21,29 +20,14 @@ fn screen(f: &Fixture) -> Vec<String> {
         .collect()
 }
 
+/// Urgent and action count, review does not, and the count adds no line: the
+/// tower has only a number, so what each one asks is left to Parallax.
 #[test]
-fn a_waiting_handoff_is_counted_and_the_most_urgent_named() {
+fn waiting_handoffs_are_counted_beside_wait() {
     let mut f = fixture();
-    parallax_snapshot(
-        &f.store,
-        vec![
-            parallax_handoff("u", "Default", "waiting_approval", Attention::Urgent, ""),
-            parallax_handoff(
-                "a",
-                "Research",
-                "needs_human",
-                Attention::Action,
-                "Pick a plan",
-            ),
-            parallax_handoff(
-                "r",
-                "Research",
-                "completed_review",
-                Attention::Review,
-                "Done",
-            ),
-        ],
-    );
+    f.records(vec![agent("c1", "claude", "work", AgentState::Waiting)]);
+    let before = screen(&f);
+    parallax_snapshot(&f.store, 1, 1, 5);
     f.records(vec![agent("c1", "claude", "work", AgentState::Waiting)]);
     let s = screen(&f);
     assert!(
@@ -51,33 +35,7 @@ fn a_waiting_handoff_is_counted_and_the_most_urgent_named() {
         "the count sits after the tally: {}",
         s[0]
     );
-    assert_eq!(
-        s[1].trim_end(),
-        "◆ parallax  Default · waiting for approval  +1 more",
-        "a redacted handoff is named by its status"
-    );
-}
-
-#[test]
-fn a_titled_handoff_shows_its_title() {
-    let mut f = fixture();
-    parallax_snapshot(
-        &f.store,
-        vec![parallax_handoff(
-            "a",
-            "Research",
-            "needs_human",
-            Attention::Action,
-            "Pick a plan",
-        )],
-    );
-    f.records(vec![agent("c1", "claude", "work", AgentState::Working)]);
-    let s = screen(&f);
-    assert!(s[0].contains("parallax 1"), "{}", s[0]);
-    assert_eq!(
-        s[1].trim_end(),
-        "◆ parallax  Research · needs you · Pick a plan"
-    );
+    assert_eq!(s[1..], before[1..], "nothing but the count changes");
 }
 
 #[test]
@@ -88,30 +46,12 @@ fn nothing_shows_without_a_fresh_snapshot_that_waits() {
     assert!(!plain.iter().any(|l| l.contains("parallax")));
 
     // Review only: finished work, not somebody waiting.
-    parallax_snapshot(
-        &f.store,
-        vec![parallax_handoff(
-            "r",
-            "W",
-            "completed_review",
-            Attention::Review,
-            "Done",
-        )],
-    );
+    parallax_snapshot(&f.store, 0, 0, 3);
     f.records(vec![agent("c1", "claude", "work", AgentState::Working)]);
     assert_eq!(screen(&f), plain);
 
     // Waiting, but the supervisor stopped two minutes ago.
-    parallax_snapshot(
-        &f.store,
-        vec![parallax_handoff(
-            "a",
-            "W",
-            "needs_human",
-            Attention::Action,
-            "",
-        )],
-    );
+    parallax_snapshot(&f.store, 0, 1, 0);
     let _ = f.app.on_event(Event::Records {
         agents: vec![agent("c1", "claude", "work", AgentState::Working)],
         branches: Default::default(),

@@ -502,7 +502,7 @@ pub struct Notices<S, W, G, P, B> {
     /// title and a line, for the person.
     pub guard: G,
     /// One of Parallax Browser's agents asked for the person (see
-    /// [`crate::parallax`]): a title and a line, once per handoff.
+    /// [`crate::parallax`]): a title and a line, when more wait than did.
     pub parallax: P,
     /// A dispatch board item is ready for review (see
     /// [`crate::boardnotice`]): a title and a line, once per delivery.

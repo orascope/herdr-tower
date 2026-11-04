@@ -408,33 +408,17 @@ pub fn handoff_dir() -> tempfile::TempDir {
 }
 
 /// Writes `parallax.json` the way the supervisor would, taken at `t0()`, so
-/// the next records event shows these handoffs.
-pub fn parallax_snapshot(store: &Store, handoffs: Vec<tower_state::ParallaxHandoff>) {
+/// the next records event shows these counts.
+pub fn parallax_snapshot(store: &Store, urgent: u64, action: u64, review: u64) {
     tower_state::ParallaxStore::new(store.dir())
         .write(&tower_state::ParallaxSnapshot {
             updated_at: t0(),
             reachable: true,
-            workspaces: 1,
-            handoffs,
+            counts: tower_state::ParallaxCounts {
+                urgent,
+                action,
+                review,
+            },
         })
         .unwrap();
-}
-
-/// A Parallax handoff with the fields the tower draws.
-pub fn parallax_handoff(
-    id: &str,
-    workspace: &str,
-    status: &str,
-    attention: tower_state::Attention,
-    title: &str,
-) -> tower_state::ParallaxHandoff {
-    tower_state::ParallaxHandoff {
-        id: id.into(),
-        workspace: workspace.into(),
-        status: status.into(),
-        attention,
-        title: title.into(),
-        created_at: None,
-        updated_at: None,
-    }
 }

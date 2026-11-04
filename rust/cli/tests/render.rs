@@ -243,14 +243,14 @@ fn the_status_line_agrees_with_a_naive_counter() {
         let agents: Vec<Agent> = (0..n)
             .map(|i| in_state(&format!("a{i}"), *rng.pick(&STATES).unwrap()))
             .collect();
-        let parallax = [0, 0, 1, 2, 17][rng.below(5)];
+        let parallax: u64 = [0, 0, 1, 2, 17][rng.below(5)];
         let line = status_line_with(&agents, parallax);
 
         let live = agents.iter().filter(|a| a.state != Dead).count();
         let of = |s: AgentState| agents.iter().filter(|a| a.state == s).count();
         let want = [
             ("wait", of(Waiting)),
-            ("parallax", parallax),
+            ("parallax", parallax as usize),
             ("err", of(Error)),
             ("done", of(DoneUnread)),
             ("working", of(Working)),
@@ -281,7 +281,7 @@ fn the_status_line_agrees_with_a_naive_counter() {
         let naive: Vec<(&str, usize)> = want.into_iter().filter(|(_, n)| *n > 0).collect();
         assert_eq!(got, naive, "{line}");
         let sum: usize = parts.iter().map(|(n, _)| n).sum();
-        assert_eq!(sum, live - of(Idle) + parallax, "{line}");
+        assert_eq!(sum, live - of(Idle) + parallax as usize, "{line}");
     }
     // `status_line` is `status_line_with` and no Parallax, for every set.
     let agents: Vec<Agent> = STATES
@@ -294,27 +294,10 @@ fn the_status_line_agrees_with_a_naive_counter() {
     }
 }
 
-fn handoff(
-    id: &str,
-    workspace: &str,
-    attention: tower_state::Attention,
-) -> tower_state::ParallaxHandoff {
-    tower_state::ParallaxHandoff {
-        id: id.into(),
-        workspace: workspace.into(),
-        status: "needs_human".into(),
-        attention,
-        title: String::new(),
-        created_at: None,
-        updated_at: None,
-    }
-}
-
 /// Parallax's handoffs sit right after WAIT, show with no agent live, and
 /// only from a snapshot young enough to believe.
 #[test]
 fn the_status_line_puts_parallax_after_wait_and_only_when_fresh() {
-    use tower_state::Attention;
     use AgentState::*;
     let agents = [
         in_state("a", Working),
@@ -335,14 +318,13 @@ fn the_status_line_puts_parallax_after_wait_and_only_when_fresh() {
     let snapshot = tower_state::ParallaxSnapshot {
         updated_at: at(0),
         reachable: true,
-        workspaces: 3,
-        handoffs: vec![
-            handoff("u", "Default", Attention::Urgent),
-            handoff("a", "Default", Attention::Action),
-            handoff("r", "Default", Attention::Review),
-        ],
+        counts: tower_state::ParallaxCounts {
+            urgent: 1,
+            action: 1,
+            review: 1,
+        },
     };
-    let count = |now| tower_state::parallax_waiting(Some(&snapshot), now).len();
+    let count = |now| tower_state::parallax_waiting(Some(&snapshot), now);
     assert_eq!(count(at(1)), 2, "review is not waiting");
     assert_eq!(
         status_line_with(&agents, count(at(1))),
@@ -352,25 +334,18 @@ fn the_status_line_puts_parallax_after_wait_and_only_when_fresh() {
     assert_eq!(status_line_with(&[], count(at(2))), "");
 }
 
-/// The table's Parallax section: absent when nothing waits, one row per
-/// handoff otherwise, a redacted one without a title and no control
-/// character from the other program's text.
+/// The table's Parallax line: absent when nothing waits, the count otherwise,
+/// singular and plural.
 #[test]
-fn the_parallax_section_lists_what_waits_and_nothing_else() {
-    use tower_state::Attention;
-    let mut out = Vec::new();
-    parallax_section(&mut out, &[]).unwrap();
-    assert!(out.is_empty());
-
-    let mut titled = handoff("a", "Research", Attention::Action);
-    titled.title = "Pick a plan\u{1b}]52;c;x\u{7}".into();
-    let mut redacted = handoff("u", "Default", Attention::Urgent);
-    redacted.status = "waiting_approval".into();
-    parallax_section(&mut out, &[&redacted, &titled]).unwrap();
-    assert_eq!(
-        String::from_utf8(out).unwrap(),
-        "\nPARALLAX — handoffs waiting on you\n  Default   waiting for approval\n  Research  needs you             Pick a plan]52;c;x\n"
-    );
+fn the_parallax_section_says_how_many_wait_and_nothing_else() {
+    let said = |waiting| {
+        let mut out = Vec::new();
+        parallax_section(&mut out, waiting).unwrap();
+        String::from_utf8(out).unwrap()
+    };
+    assert_eq!(said(0), "");
+    assert_eq!(said(1), "\nPARALLAX — 1 handoff waiting on you\n");
+    assert_eq!(said(3), "\nPARALLAX — 3 handoffs waiting on you\n");
 }
 
 /// One vocabulary for a working and a waiting agent, wherever it is shown:

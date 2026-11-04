@@ -110,12 +110,12 @@ pub fn status_line(agents: &[Agent]) -> String {
 /// this runs every five seconds from herdr's tab bar and reads files, never
 /// Parallax. A handoff with no agent live still prints, since the line is
 /// how the person learns that anything is waiting at all.
-pub fn status_line_with(agents: &[Agent], parallax: usize) -> String {
+pub fn status_line_with(agents: &[Agent], parallax: u64) -> String {
     let live: Vec<_> = agents.iter().filter(|a| a.is_live()).collect();
     if live.is_empty() && parallax == 0 {
         return String::new();
     }
-    let count = |state: AgentState| live.iter().filter(|a| a.state == state).count();
+    let count = |state: AgentState| live.iter().filter(|a| a.state == state).count() as u64;
     let mut counts = vec![(count(AgentState::Waiting), "wait"), (parallax, "parallax")];
     counts.extend(
         [
@@ -138,53 +138,16 @@ pub fn status_line_with(agents: &[Agent], parallax: usize) -> String {
     }
 }
 
-/// The status table's closing section: Parallax Browser's handoffs that wait
-/// on the person, or nothing at all when none do — a machine without
+/// The status table's closing line: how many of Parallax Browser's handoffs
+/// wait on the person, or nothing at all when none do — a machine without
 /// Parallax sees the table it always saw.
-///
-/// `waiting` is [`tower_state::parallax_waiting`]'s answer, most urgent first.
-/// Parallax's text is another program's, so every cell is cleaned of controls
-/// and cut to width like the table's own.
-pub fn parallax_section(
-    out: &mut impl std::io::Write,
-    waiting: &[&tower_state::ParallaxHandoff],
-) -> std::io::Result<()> {
-    if waiting.is_empty() {
+pub fn parallax_section(out: &mut impl std::io::Write, waiting: u64) -> std::io::Result<()> {
+    if waiting == 0 {
         return Ok(());
     }
+    let handoffs = if waiting == 1 { "handoff" } else { "handoffs" };
     writeln!(out)?;
-    writeln!(out, "PARALLAX — handoffs waiting on you")?;
-    let rows: Vec<[String; 3]> = waiting
-        .iter()
-        .map(|h| {
-            [
-                truncate_width(&tower_state::clean_text(&h.workspace), 24),
-                h.status_label().to_string(),
-                // A redacted handoff shows nothing here: Parallax did not
-                // entitle the tower to what it says.
-                truncate_width(&tower_state::clean_text(&h.title), TASK_MAX_WIDTH),
-            ]
-        })
-        .collect();
-    let w0 = rows
-        .iter()
-        .map(|r| tower_text::width(&r[0]))
-        .max()
-        .unwrap_or(0);
-    let w1 = rows
-        .iter()
-        .map(|r| tower_text::width(&r[1]))
-        .max()
-        .unwrap_or(0);
-    for [workspace, status, title] in rows {
-        let line = format!(
-            "  {}{}{title}",
-            pad_right(&workspace, w0 + 2),
-            pad_right(&status, w1 + 2)
-        );
-        writeln!(out, "{}", line.trim_end())?;
-    }
-    Ok(())
+    writeln!(out, "PARALLAX — {waiting} {handoffs} waiting on you")
 }
 
 const TASK_MAX_WIDTH: usize = 40;

@@ -31,8 +31,7 @@ pub fn run_status(args: &[String]) -> Result<()> {
         // Parallax's handoffs the same way: the supervisor's snapshot, never
         // Parallax itself, and only while the snapshot is fresh.
         let parallax = tower_state::ParallaxStore::new(store.dir()).read();
-        let waiting =
-            tower_state::parallax_waiting(parallax.as_ref(), OffsetDateTime::now_utc()).len();
+        let waiting = tower_state::parallax_waiting(parallax.as_ref(), OffsetDateTime::now_utc());
         tower_cli::outln!("{}", tower_cli::status_line_with(&store.list()?, waiting))?;
         return Ok(());
     }
@@ -56,7 +55,7 @@ pub fn run_status(args: &[String]) -> Result<()> {
         let parallax = tower_state::ParallaxStore::new(store.dir()).read();
         tower_cli::parallax_section(
             &mut out,
-            &tower_state::parallax_waiting(parallax.as_ref(), now),
+            tower_state::parallax_waiting(parallax.as_ref(), now),
         )?;
     }
     Ok(())
