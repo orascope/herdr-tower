@@ -946,6 +946,19 @@ pub fn run_tree(args: &[String]) -> Result<()> {
 
 /// `herdr-tower board …` — see [`tower_cli::boardcmd`] and
 /// [`tower_cli::boardwatch`].
+pub fn run_parallax(args: &[String]) -> Result<()> {
+    let store = store()?;
+    let said = tower_cli::parallax::wake_command(
+        args,
+        &tower_state::ParallaxStore::new(store.dir()),
+        &store.list()?,
+        &tower_cli::muxsel::default_backend_id(),
+        herdrx::current_pane_id().as_deref(),
+    )?;
+    tower_cli::outln!("{said}")?;
+    Ok(())
+}
+
 pub fn run_board(args: &[String]) -> Result<()> {
     use tower_cli::boardcmd::{self, Cmd};
     let (given_repo, args) = boardcmd::take_repo(args)?;

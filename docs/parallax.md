@@ -8,7 +8,7 @@ approval, a question, a blocked step — Parallax records a **handoff**. The
 tower's job is to be the one place that shows who is waiting on you, so those
 handoffs are shown beside the agents in herdr.
 
-It is **read-only**. The tower does not answer, resolve or drive anything in
+It is **read-only**, apart from the [one wake you can ask for](#waking-an-agent-for-reviews). The tower does not answer, resolve or drive anything in
 Parallax, does not proxy it, and does not register Parallax's MCP anywhere. You
 answer a handoff in Parallax.
 
@@ -75,6 +75,29 @@ Taken on the supervisor's next poll; turning it off also removes
 `herdr-tower doctor` has a `parallax` section: off, not installed, installed
 but not readable (with the reason), or answering with the counts. None of these
 is a problem for the tower — Parallax is closed as often as it is open.
+
+## Waking an agent for reviews
+
+Off until you ask. Name one pane, and the supervisor wakes it when more handoffs
+are ready for review (`ready_to_resume`, `completed_review`):
+
+```bash
+herdr-tower parallax wake on           # from that pane
+herdr-tower parallax wake on w2:pBQ    # or name it
+herdr-tower parallax wake show
+herdr-tower parallax wake off
+```
+
+- Only `review` wakes it. `urgent` and `action` wait on your answer, so they wake
+  nobody
+- The message is the tower's own words and the count; no handoff text reaches the
+  agent. It reads the handoffs itself, so it needs its own Parallax connection
+- Only while the agent is idle, not just typed into and not held by the usage
+  guard, and only the same agent that was named: a new one in that pane is not
+  woken. If it is busy, it is tried again until it is idle
+- Once per rise. Handoffs already there when you name the pane count as a rise.
+  A restart does not repeat it. One closed and another ready between two polls
+  leave the number the same, so that one wakes nobody
 
 ## Agents and Parallax
 

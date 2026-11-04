@@ -61,6 +61,7 @@ fn run(args: &[String]) -> Result<()> {
         Some("report") => run_report(&args[1..]),
         Some("loop") => run_loop(&args[1..]),
         Some("board") => run_board(&args[1..]),
+        Some("parallax") => run_parallax(&args[1..]),
         Some("tree") => run_tree(&args[1..]),
         Some("mcp") => run_mcp(&args[1..]),
         Some("config") => run_config(&args[1..]),

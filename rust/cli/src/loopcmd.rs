@@ -1195,6 +1195,17 @@ fn supervise_logged(
             ) {
                 log.line(&line);
             }
+            // The same care for a pane named for Parallax's reviews.
+            for line in parallax_watch.review_wake(
+                &parallax_store,
+                OffsetDateTime::now_utc(),
+                &|pane, message| {
+                    let id = wake_advisor(&clients, &agents, &hold, pane, message);
+                    id.map(|id| woke.borrow_mut().push(id)).is_some()
+                },
+            ) {
+                log.line(&line);
+            }
             for id in woke.into_inner() {
                 recent.insert(id, std::time::Instant::now());
                 dispatched = true;

@@ -27,6 +27,8 @@ use crate::write_atomic;
 
 /// The snapshot the supervisor writes.
 pub const PARALLAX_FILE: &str = "parallax.json";
+/// Which pane to wake for handoffs to review, and for how many it last was.
+pub const PARALLAX_WAKE_FILE: &str = "parallax-wake.json";
 /// Where earlier versions kept the handoff IDs they had announced. Only ever
 /// removed now.
 const LEGACY_NOTIFIED_FILE: &str = "parallax-notified.json";
@@ -86,7 +88,19 @@ pub fn parallax_waiting(snapshot: Option<&ParallaxSnapshot>, now: OffsetDateTime
     }
 }
 
-/// `parallax.json` in one state directory.
+/// The pane `herdr-tower parallax wake on` named. Only `review` wakes it: a
+/// handoff waiting on the person's answer is the person's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParallaxWake {
+    pub pane: crate::PaneWorker,
+    /// The review count it was last woken for, kept here so a restarted
+    /// supervisor does not wake it for the same ones. Lowered when the count
+    /// falls, so a later rise is a rise.
+    #[serde(default)]
+    pub woken_review: u64,
+}
+
+/// `parallax.json` and `parallax-wake.json` in one state directory.
 #[derive(Debug, Clone)]
 pub struct ParallaxStore {
     dir: PathBuf,
@@ -117,6 +131,24 @@ impl ParallaxStore {
     /// Removes the snapshot: `parallax` turned off. Already gone is fine.
     pub fn remove(&self) -> std::io::Result<()> {
         remove_if_there(&self.dir.join(PARALLAX_FILE))
+    }
+
+    /// Who to wake, or `None` when nobody was named. A broken file is nobody:
+    /// typing into an agent is not something to guess at.
+    pub fn read_wake(&self) -> Option<ParallaxWake> {
+        let body = fs::read(self.dir.join(PARALLAX_WAKE_FILE)).ok()?;
+        serde_json::from_slice(&body).ok()
+    }
+
+    pub fn write_wake(&self, wake: &ParallaxWake) -> std::io::Result<()> {
+        let body = serde_json::to_vec_pretty(wake)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        write_atomic(&self.dir.join(PARALLAX_WAKE_FILE), &body)
+    }
+
+    /// Nobody is woken any more. Already nobody is fine.
+    pub fn remove_wake(&self) -> std::io::Result<()> {
+        remove_if_there(&self.dir.join(PARALLAX_WAKE_FILE))
     }
 
     /// Removes what earlier versions left beside the snapshot.
@@ -208,6 +240,30 @@ mod tests {
         std::fs::write(&file, "[]").unwrap();
         store.remove_legacy().unwrap();
         assert!(!file.exists());
+    }
+
+    #[test]
+    fn the_wake_pin_round_trips_and_garbage_is_nobody() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ParallaxStore::new(dir.path());
+        store.remove_wake().unwrap();
+        assert_eq!(store.read_wake(), None);
+        let wake = ParallaxWake {
+            pane: crate::PaneWorker {
+                backend: String::new(),
+                pane_id: "w1:p2".into(),
+                agent_id: "a".into(),
+                session_id: "s".into(),
+                born_at: Some(at(0)),
+            },
+            woken_review: 3,
+        };
+        store.write_wake(&wake).unwrap();
+        assert_eq!(store.read_wake(), Some(wake));
+        std::fs::write(dir.path().join(PARALLAX_WAKE_FILE), "{").unwrap();
+        assert_eq!(store.read_wake(), None);
+        store.remove_wake().unwrap();
+        assert!(!dir.path().join(PARALLAX_WAKE_FILE).exists());
     }
 
     #[cfg(unix)]

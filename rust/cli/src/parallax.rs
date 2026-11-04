@@ -32,6 +32,12 @@
 //!   without Parallax running, not a fault, and the result is only "not
 //!   available".
 //!
+//! One thing goes the other way, and only when asked: `herdr-tower parallax
+//! wake on` names a pane to wake when more handoffs are ready for review. The
+//! message is the tower's own words and a count. An agent that acts on it does
+//! so through its own Parallax tools. `urgent` and `action` wake nobody: those
+//! wait on the person's answer.
+//!
 //! The resident supervisor polls on a thread of its own ([`Refresher`]) and
 //! writes `parallax.json` ([`tower_state::ParallaxStore`]); everything that
 //! shows handoffs reads that file.
@@ -454,6 +460,11 @@ pub struct Watch {
     last_waiting: Option<u64>,
     /// Whether what earlier versions left has been cleared.
     legacy_cleared: bool,
+    /// The review count last woken for, in case the file could not say so: a
+    /// file that cannot be written must not have the pane woken on every pass.
+    woken_review: Option<u64>,
+    /// The last trouble with `parallax-wake.json`, said once until it clears.
+    wake_failed: Option<String>,
 }
 
 /// A notice for the person: a title and a line.
@@ -554,6 +565,118 @@ impl Watch {
             ),
         }
         (log, notices)
+    }
+}
+
+impl Watch {
+    /// Wakes the named pane if more handoffs are ready for review than it was
+    /// last woken for. `deliver` says whether it was typed into: one that is
+    /// busy says no, and this comes round again on the next pass. Returns the
+    /// log lines.
+    pub fn review_wake(
+        &mut self,
+        store: &ParallaxStore,
+        now: OffsetDateTime,
+        deliver: &dyn Fn(&tower_state::PaneWorker, &str) -> bool,
+    ) -> Vec<String> {
+        let mut log = Vec::new();
+        let Some(mut wake) = store.read_wake() else {
+            self.woken_review = None;
+            return log;
+        };
+        // A count too old to show is too old to act on.
+        let Some(review) = store
+            .read()
+            .filter(|s| s.reachable && s.fresh(now))
+            .map(|s| s.counts.review)
+        else {
+            return log;
+        };
+        let woken = wake.woken_review.max(self.woken_review.unwrap_or(0));
+        if review == woken {
+            return log;
+        }
+        if review > woken {
+            if !deliver(&wake.pane, &wake_message(review)) {
+                return log;
+            }
+            log.push(format!(
+                "parallax: woke pane {} for {review} to review",
+                wake.pane.pane_id
+            ));
+        }
+        self.woken_review = Some(review);
+        wake.woken_review = review;
+        match store.write_wake(&wake) {
+            Ok(()) => self.wake_failed = None,
+            Err(e) => failed(
+                &mut self.wake_failed,
+                &mut log,
+                &format!("writing parallax-wake.json: {e}"),
+            ),
+        }
+        log
+    }
+}
+
+/// What the woken agent is told. The tower's own words and a number: nothing
+/// another program wrote reaches an agent that runs with full permissions.
+pub fn wake_message(review: u64) -> String {
+    let handoffs = if review == 1 { "handoff" } else { "handoffs" };
+    format!(
+        "[herdr-tower parallax] {review} {handoffs} ready for review in Parallax Browser. \
+         Look at them with your Parallax tools. Anything that needs the person's approval stays with the person."
+    )
+}
+
+/// `herdr-tower parallax`: names who is woken for reviews.
+pub const USAGE: &str = "usage: herdr-tower parallax wake on [<pane>] | off | show
+
+  wake on [<pane>]   wake this pane (or the one named) when more Parallax handoffs
+                     are ready for review, while it is idle
+  wake off           wake nobody
+  wake show          who is woken
+
+Off until asked. Handoffs waiting on your answer wake nobody.";
+
+/// Runs `herdr-tower parallax …`. `caller` is the pane it runs in; `backend`
+/// is the one a pane id is resolved on.
+pub fn wake_command(
+    args: &[String],
+    store: &ParallaxStore,
+    records: &[tower_state::Agent],
+    backend: &str,
+    caller: Option<&str>,
+) -> Result<String, String> {
+    let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    match words.as_slice() {
+        ["wake", "on", rest @ ..] if rest.len() <= 1 => {
+            let Some(id) = rest.first().copied().or(caller) else {
+                return Err(
+                    "parallax wake on names the pane it runs in: run it from that pane, or name it (wake on w2:pBR)"
+                        .into(),
+                );
+            };
+            let pane = crate::boardcmd::pin_pane(backend, id, records)?;
+            // A count already there is what it is being named for.
+            let wake = tower_state::ParallaxWake {
+                pane,
+                woken_review: 0,
+            };
+            store.write_wake(&wake).map_err(|e| e.to_string())?;
+            Ok(format!(
+                "pane {id} will be woken when more Parallax handoffs are ready for review (while it is idle)."
+            ))
+        }
+        ["wake", "off"] => {
+            store.remove_wake().map_err(|e| e.to_string())?;
+            Ok("nobody is woken for Parallax reviews now.".into())
+        }
+        ["wake", "show"] => Ok(match store.read_wake() {
+            Some(w) => format!("pane {} is woken for Parallax reviews.", w.pane.pane_id),
+            None => "nobody is woken for Parallax reviews.".into(),
+        }),
+        _ => Err(USAGE.into()),
     }
 }
 
@@ -813,6 +936,228 @@ mod tests {
             unreachable.line,
             "installed, but not readable: not answering"
         );
+    }
+
+    // ── waking for reviews ──────────────────────────────────────────────
+
+    fn pin(pane: &str) -> tower_state::PaneWorker {
+        tower_state::PaneWorker {
+            backend: String::new(),
+            pane_id: pane.into(),
+            agent_id: "a".into(),
+            session_id: "s".into(),
+            born_at: None,
+        }
+    }
+
+    /// A store holding a fresh count of `review` and, when `named`, a pin.
+    fn wake_store(named: bool) -> (tempfile::TempDir, ParallaxStore) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ParallaxStore::new(dir.path());
+        if named {
+            store
+                .write_wake(&tower_state::ParallaxWake {
+                    pane: pin("w1:p2"),
+                    woken_review: 0,
+                })
+                .unwrap();
+        }
+        (dir, store)
+    }
+
+    fn set_counts(store: &ParallaxStore, urgent: u64, action: u64, review: u64) {
+        store
+            .write(&ParallaxSnapshot {
+                updated_at: at(0),
+                reachable: true,
+                counts: ParallaxCounts {
+                    urgent,
+                    action,
+                    review,
+                },
+            })
+            .unwrap();
+    }
+
+    /// Runs one pass with a pane that is idle or not; what it was told.
+    fn pass(watch: &mut Watch, store: &ParallaxStore, idle: bool) -> Vec<String> {
+        let told = std::cell::RefCell::new(Vec::new());
+        let _ = watch.review_wake(store, at(1), &|pane, message| {
+            assert_eq!(pane.pane_id, "w1:p2");
+            told.borrow_mut().push(message.to_string());
+            idle
+        });
+        told.into_inner()
+    }
+
+    #[test]
+    fn nobody_is_woken_unless_a_pane_was_named() {
+        let (_d, store) = wake_store(false);
+        set_counts(&store, 0, 0, 5);
+        let mut watch = Watch::default();
+        assert!(watch
+            .review_wake(&store, at(1), &|_, _| panic!("nobody was named"))
+            .is_empty());
+    }
+
+    /// Only `review` wakes: what waits on the person's answer does not.
+    #[test]
+    fn urgent_and_action_wake_nobody() {
+        let (_d, store) = wake_store(true);
+        set_counts(&store, 4, 4, 0);
+        assert!(pass(&mut Watch::default(), &store, true).is_empty());
+    }
+
+    #[test]
+    fn a_rise_wakes_once_and_a_fall_then_rise_wakes_again() {
+        let (_d, store) = wake_store(true);
+        let mut watch = Watch::default();
+        set_counts(&store, 0, 0, 2);
+        assert_eq!(pass(&mut watch, &store, true), [wake_message(2)]);
+        assert!(pass(&mut watch, &store, true).is_empty(), "same count");
+        set_counts(&store, 0, 0, 3);
+        assert_eq!(pass(&mut watch, &store, true), [wake_message(3)]);
+        set_counts(&store, 0, 0, 1);
+        assert!(pass(&mut watch, &store, true).is_empty(), "a fall");
+        assert_eq!(store.read_wake().unwrap().woken_review, 1);
+        set_counts(&store, 0, 0, 2);
+        assert_eq!(pass(&mut watch, &store, true), [wake_message(2)]);
+    }
+
+    /// A busy pane is not counted as woken, and is tried again.
+    #[test]
+    fn a_busy_pane_is_tried_again() {
+        let (_d, store) = wake_store(true);
+        let mut watch = Watch::default();
+        set_counts(&store, 0, 0, 1);
+        assert_eq!(pass(&mut watch, &store, false).len(), 1);
+        assert_eq!(store.read_wake().unwrap().woken_review, 0);
+        assert_eq!(pass(&mut watch, &store, false).len(), 1);
+        assert_eq!(pass(&mut watch, &store, true).len(), 1);
+        assert!(pass(&mut watch, &store, true).is_empty());
+    }
+
+    #[test]
+    fn a_restart_does_not_wake_for_the_same_ones() {
+        let (_d, store) = wake_store(true);
+        set_counts(&store, 0, 0, 2);
+        assert_eq!(pass(&mut Watch::default(), &store, true).len(), 1);
+        assert!(pass(&mut Watch::default(), &store, true).is_empty());
+    }
+
+    #[test]
+    fn a_stale_or_unreachable_count_wakes_nobody() {
+        let (_d, store) = wake_store(true);
+        set_counts(&store, 0, 0, 2);
+        let mut watch = Watch::default();
+        let stale = at(0) + tower_state::PARALLAX_FRESH + time::Duration::seconds(1);
+        assert!(watch
+            .review_wake(&store, stale, &|_, _| panic!("too old"))
+            .is_empty());
+        store
+            .write(&ParallaxSnapshot {
+                updated_at: at(0),
+                reachable: false,
+                counts: ParallaxCounts {
+                    urgent: 0,
+                    action: 0,
+                    review: 2,
+                },
+            })
+            .unwrap();
+        assert!(pass(&mut watch, &store, true).is_empty());
+    }
+
+    /// A pin that cannot be rewritten still wakes once, and says so once.
+    #[cfg(unix)]
+    #[test]
+    fn an_unwritable_pin_does_not_repeat_the_wake() {
+        use std::os::unix::fs::PermissionsExt;
+        let (dir, store) = wake_store(true);
+        set_counts(&store, 0, 0, 1);
+        let mode = |m| std::fs::Permissions::from_mode(m);
+        std::fs::set_permissions(dir.path(), mode(0o555)).unwrap();
+        let mut watch = Watch::default();
+        let woken = std::cell::Cell::new(0);
+        let wake = |watch: &mut Watch| {
+            watch.review_wake(&store, at(1), &|_, _| {
+                woken.set(woken.get() + 1);
+                true
+            })
+        };
+        let first = wake(&mut watch);
+        let second = wake(&mut watch);
+        std::fs::set_permissions(dir.path(), mode(0o755)).unwrap();
+        assert_eq!(woken.get(), 1, "memory holds it");
+        assert!(
+            first
+                .iter()
+                .any(|l| l.contains("writing parallax-wake.json")),
+            "{first:?}"
+        );
+        assert!(second.is_empty(), "{second:?}");
+    }
+
+    /// Nothing but the tower's words and a number goes to the agent.
+    #[test]
+    fn the_message_is_the_towers_words_and_a_count() {
+        assert_eq!(
+            wake_message(1),
+            "[herdr-tower parallax] 1 handoff ready for review in Parallax Browser. Look at them with your Parallax tools. Anything that needs the person's approval stays with the person."
+        );
+        assert!(wake_message(2).contains("2 handoffs ready"));
+    }
+
+    fn agent_in(pane: &str) -> tower_state::Agent {
+        let mut a = tower_state::Agent::new("a", "claude", at(0));
+        a.pane.pane_id = pane.into();
+        a.state = tower_state::AgentState::Idle;
+        a
+    }
+
+    fn cmd(
+        store: &ParallaxStore,
+        words: &[&str],
+        records: &[tower_state::Agent],
+        caller: Option<&str>,
+    ) -> Result<String, String> {
+        let args: Vec<String> = words.iter().map(|w| w.to_string()).collect();
+        wake_command(&args, store, records, "", caller)
+    }
+
+    #[test]
+    fn the_command_names_shows_and_clears_the_pane() {
+        let (_d, store) = wake_store(false);
+        let records = [agent_in("w1:p2")];
+        assert_eq!(
+            cmd(&store, &["wake", "show"], &records, None).unwrap(),
+            "nobody is woken for Parallax reviews."
+        );
+        cmd(&store, &["wake", "on", "w1:p2"], &records, None).unwrap();
+        assert_eq!(store.read_wake().unwrap().pane.pane_id, "w1:p2");
+        assert!(cmd(&store, &["wake", "show"], &records, None)
+            .unwrap()
+            .contains("w1:p2"));
+        cmd(&store, &["wake", "off"], &records, None).unwrap();
+        assert_eq!(store.read_wake(), None);
+        cmd(&store, &["wake", "on"], &records, Some("w1:p2")).unwrap();
+        assert_eq!(store.read_wake().unwrap().pane.pane_id, "w1:p2");
+    }
+
+    #[test]
+    fn the_command_refuses_what_it_cannot_pin() {
+        let (_d, store) = wake_store(false);
+        let records = [agent_in("w1:p2")];
+        assert!(cmd(&store, &["wake", "on"], &records, None)
+            .unwrap_err()
+            .contains("names the pane"));
+        assert!(cmd(&store, &["wake", "on", "w9:p9"], &records, None)
+            .unwrap_err()
+            .contains("no agent is running"));
+        assert_eq!(store.read_wake(), None, "nothing named");
+        for bad in [&[][..], &["wake"], &["nope"], &["wake", "on", "a", "b"]] {
+            assert_eq!(cmd(&store, bad, &records, None).unwrap_err(), USAGE);
+        }
     }
 
     // ── against a server ────────────────────────────────────────────────

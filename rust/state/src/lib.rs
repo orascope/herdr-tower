@@ -31,8 +31,8 @@ mod daemon_store;
 pub use daemon_store::{release_triple, DaemonBackend, DaemonSnapshot, DaemonStore};
 mod parallax_store;
 pub use parallax_store::{
-    parallax_waiting, ParallaxCounts, ParallaxSnapshot, ParallaxStore, PARALLAX_FILE,
-    PARALLAX_FRESH,
+    parallax_waiting, ParallaxCounts, ParallaxSnapshot, ParallaxStore, ParallaxWake, PARALLAX_FILE,
+    PARALLAX_FRESH, PARALLAX_WAKE_FILE,
 };
 mod board_store;
 pub use board_store::{
