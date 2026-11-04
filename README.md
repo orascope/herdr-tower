@@ -280,7 +280,7 @@ changed: [history.md](history.md).
 - Never write a credential into the state files (`~/.local/state/herdr-tower/`)
 - The one request it makes on its own: the supervisor asks GitHub's public
   releases API for the newest tag a few times a day, so the header can say
-  `v… available ↗` instead of its `★ github.com/orascope/herdr-tower ↗` link.
+  `v… available ↗` instead of its `https://github.com/orascope/herdr-tower` link.
   Nothing but the user agent is sent; `herdr-tower config set update_check false`
   stops it
 - Agent processes do not survive a Mac sleeping or rebooting —

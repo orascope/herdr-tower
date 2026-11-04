@@ -283,7 +283,7 @@ fn header_link(app: &App) -> (String, String, Style) {
             theme::help_key(),
         ),
         None => (
-            "★ github.com/orascope/herdr-tower ↗".to_string(),
+            "https://github.com/orascope/herdr-tower".to_string(),
             REPO_URL.to_string(),
             theme::help(),
         ),
