@@ -302,7 +302,7 @@ request whose `Origin` is neither this server nor an allowed callback's origin g
 |---|---|
 | calls per connection | 300 read and 30 act per 10 minutes |
 | a request | the head ≤ 16 KiB (`431`), the body ≤ 64 KiB (`413`, refused before it is read), no chunked body (`411`) |
-| arriving | a whole request within 10 seconds; at most 32 connections still sending (`503` + `Retry-After: 1` beyond that). The last 8 are kept for connected clients: a connection that gets one has 2 seconds for its head, and goes on to read a body only with a live bearer token — any other request with a body still to come gets `503` before it is read, so strangers trickling bodies cannot shut out `/mcp` |
+| arriving | a whole request within 10 seconds; at most 32 connections still sending (`503` + `Retry-After: 1` beyond that). When they are full, a newcomer takes the place of the connection whose head has been unfinished longest, once it has waited 250 ms. The last 8 are kept for connected clients: a connection that gets one has 2 seconds for its head, and goes on to read a body only with a live bearer token — any other request with a body still to come gets `503` before it is read, so strangers trickling bodies cannot shut out `/mcp` |
 | handling | 8 tool calls at a time, and 8 other requests (sign-in, metadata) in a pool of their own, so busy tools never block sign-in |
 | listening | loopback only; the server refuses any other address |
 
