@@ -37,25 +37,12 @@ impl Drop for Server {
     }
 }
 
-/// A port no other test in this process was given.
-///
-/// The listener closes before the server binds, so the kernel may offer the same
-/// port to a test running beside this one. Two tests would then share one server,
-/// and the first to finish would take it away from the other.
 fn free_port() -> u16 {
-    static GIVEN: std::sync::Mutex<Vec<u16>> = std::sync::Mutex::new(Vec::new());
-    let mut given = GIVEN.lock().unwrap();
-    loop {
-        let port = TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        if !given.contains(&port) {
-            given.push(port);
-            return port;
-        }
-    }
+    TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 fn copy_dir(from: &Path, to: &Path) {
