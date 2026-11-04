@@ -108,27 +108,17 @@ fn scenario(seed: u64) -> Fixture {
             a
         })
         .collect::<Vec<_>>();
-    // Parallax handoffs waiting: one more header line, with another
-    // program's text of any width in it. A generator of its own, so the
-    // screens the other properties were tuned on stay the ones they get.
+    // Parallax handoffs waiting: a count of any width on the header's line.
+    // A generator of its own, so the screens the other properties were tuned
+    // on stay the ones they get.
     let mut rng2 = Rng::new(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ 0x5041_5241);
     if rng2.chance(30) {
-        let handoffs = (0..1 + rng2.below(3))
-            .map(|i| {
-                parallax_handoff(
-                    &format!("h{i}"),
-                    &rng2.text(16),
-                    rng2.pick(&["needs_human", "blocked", "waiting_approval", "novel"]),
-                    if rng2.chance(50) {
-                        tower_state::Attention::Urgent
-                    } else {
-                        tower_state::Attention::Action
-                    },
-                    &rng2.text(60),
-                )
-            })
-            .collect();
-        parallax_snapshot(&f.store, handoffs);
+        parallax_snapshot(
+            &f.store,
+            rng2.below(4) as u64,
+            [0, 1, 99_999][rng2.below(3)],
+            rng2.below(4) as u64,
+        );
     }
     f.records(agents);
     // The preview is the selected agent's: the cursor starts on the first row

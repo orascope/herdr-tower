@@ -209,30 +209,6 @@ pub fn fable_warning(app: &App) -> Option<Vec<Span<'static>>> {
     Some(spans)
 }
 
-/// `◆ parallax  Research · needs you · Pick a plan  +1 more` — the header's
-/// line for the most urgent Parallax handoff.
-///
-/// The text is another program's, so it is cleaned of controls here as well
-/// as where it was written: the snapshot is a file anybody with the account
-/// can edit. A redacted handoff has no title and is named by its status.
-pub fn parallax_line(top: &tower_state::ParallaxHandoff, more: usize) -> Line<'static> {
-    let mut spans = vec![
-        Span::styled("◆ parallax  ", theme::state(AgentState::Waiting)),
-        Span::raw(tower_state::clean_text(&top.workspace).into_owned()),
-        Span::styled(format!(" · {}", top.status_label()), theme::help()),
-    ];
-    if !top.title.is_empty() {
-        spans.push(Span::raw(format!(
-            " · {}",
-            tower_state::clean_text(&top.title)
-        )));
-    }
-    if more > 0 {
-        spans.push(Span::styled(format!("  +{more} more"), theme::help()));
-    }
-    Line::from(spans)
-}
-
 pub fn header_lines(app: &App) -> Vec<Line<'static>> {
     let mut first = vec![Span::styled("herdr-tower", theme::title())];
     // 🚨 In the dock too. The dock is how this is opened — one click in the
@@ -259,10 +235,10 @@ pub fn header_lines(app: &App) -> Vec<Line<'static>> {
     // from another program. Not counted into WAIT, which is agents this tower
     // can jump to.
     let parallax = app.parallax_waiting();
-    if !parallax.is_empty() {
+    if parallax > 0 {
         first.push(Span::raw("  "));
         first.push(Span::styled(
-            format!("parallax {}", parallax.len()),
+            format!("parallax {parallax}"),
             theme::state(AgentState::Waiting),
         ));
     }
@@ -281,13 +257,6 @@ pub fn header_lines(app: &App) -> Vec<Line<'static>> {
         first.extend(warning);
     }
     let mut lines = vec![Line::from(first)];
-    // The most urgent of them by name, one line and only while there is one:
-    // the count says that something waits, this says where to go. Parallax
-    // is answered in Parallax, so there is no key here — the tower only
-    // shows it.
-    if let Some(top) = parallax.first() {
-        lines.push(parallax_line(top, parallax.len() - 1));
-    }
     // Every AI's windows, as short bars — the usage board's one line. All of
     // it is `u` away.
     if let Some(frame) = app.usage_frame().filter(|f| !f.summary.is_empty()) {

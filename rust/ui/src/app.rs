@@ -402,8 +402,8 @@ pub struct App {
     /// tower is the only writer.
     hint_store: HintStore,
     hints: FieldHints,
-    /// `parallax.json`: Parallax Browser's handoffs as the supervisor last
-    /// read them. Read with the schedules on every records event, never from
+    /// `parallax.json`: how many of Parallax Browser's handoffs ask for the
+    /// person, as the supervisor last read it. Read with the schedules on every records event, never from
     /// Parallax itself — see `tower_cli::parallax`.
     parallax_store: tower_state::ParallaxStore,
     parallax: Option<tower_state::ParallaxSnapshot>,
@@ -1214,9 +1214,9 @@ impl App {
         &self.schedule_list
     }
 
-    /// Parallax Browser's handoffs waiting on the person, most urgent first —
-    /// none while the supervisor's snapshot is missing or stale.
-    pub fn parallax_waiting(&self) -> Vec<&tower_state::ParallaxHandoff> {
+    /// How many of Parallax Browser's handoffs wait on the person — none while
+    /// the supervisor's snapshot is missing or stale.
+    pub fn parallax_waiting(&self) -> u64 {
         tower_state::parallax_waiting(self.parallax.as_ref(), self.now)
     }
 
