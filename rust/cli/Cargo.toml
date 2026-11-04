@@ -13,7 +13,6 @@ path = "src/main.rs"
 [dependencies]
 tower_os.workspace = true
 tower_config.workspace = true
-tower_discord.workspace = true
 tower_hook.workspace = true
 tower_mux.workspace = true
 tower_notify.workspace = true

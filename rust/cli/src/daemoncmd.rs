@@ -437,7 +437,7 @@ const RETIRED: &[Retired] = &[
     Retired {
         label: "dev.herdr.tower.card",
         args: &["card"],
-        why: "the supervisor refreshes the Discord card itself now",
+        why: "the status card this ran is gone",
     },
     Retired {
         label: "dev.herdr.tower.mcp",

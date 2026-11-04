@@ -49,7 +49,6 @@ Commands:
   report         what each session did in a window: turns, work, time waiting on you, errors, drive verdicts  [--since 12h] [--json]
   info <name|id> one session in detail (model, ctx, hook wiring, …)
   dock           run the tower in its own herdr workspace, opened with a click  [--focus | --install-startup]
-  card           post the Discord dashboard card  [--out print only] [--event transition-triggered]
   init           hooks, the herdr key, skills — idempotent  [--dry-run]
   daemon         resident supervisor  (one process, multiple Herdr sockets)
   doctor         check that every hook, plugin and service still points at a real binary
@@ -92,7 +91,6 @@ mod tests {
             "report",
             "info",
             "dock",
-            "card",
             "init",
             "doctor",
             "open",

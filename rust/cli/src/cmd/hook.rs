@@ -28,7 +28,6 @@ pub fn run_hook(args: &[String]) -> Result<()> {
             return Ok(());
         }
     };
-    let cfg = outbound_config();
     let now = OffsetDateTime::now_utc();
 
     let transition = match agent.as_str() {
@@ -74,12 +73,9 @@ pub fn run_hook(args: &[String]) -> Result<()> {
         }
     };
 
-    let moved = transition.as_ref().is_some_and(|t| t.moved());
     if let Some(t) = &transition {
         // Handed to another process, not delivered here. This runs inside the
-        // agent's own turn, and delivery is two things the hook cannot bound:
-        // `osascript`/`notify-send`, which have no timeout at all, and a webhook
-        // POST whose own five-second budget is five seconds of an agent waiting.
+        // agent's own turn, and `osascript`/`notify-send` have no timeout at all.
         // A notification is best-effort by nature; nothing here reads its result.
         spawn_detached(&[
             "notify-transition",
@@ -90,11 +86,6 @@ pub fn run_hook(args: &[String]) -> Result<()> {
             "--to",
             &tower_cli::infocmd::state_word(t.to()),
         ]);
-    }
-
-    // Worth doing and not worth waiting for.
-    if moved && cfg.discord_webhook_url.is_some() {
-        spawn_detached(&["card", "--event"]);
     }
     Ok(())
 }
@@ -123,6 +114,6 @@ pub fn run_notify(args: &[String]) -> Result<()> {
         return Err("--from and --to must be state names".into());
     };
     let a = store()?.load(p.str("agent"))?;
-    tower_notify::notify(&outbound_config(), &notify_sender(), &a, prev, to);
+    tower_notify::notify(&tower_config::load(), &notify_sender(), &a, prev, to);
     Ok(())
 }

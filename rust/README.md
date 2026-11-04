@@ -10,15 +10,14 @@ verified against a real herdr server before the one above it was built on it.
 | `tower_scan` | pane→record reconciliation, state reflection, hook precedence. Verified against a real server |
 | `tower_config` | configuration. Missing or broken, it runs on the defaults |
 | `tower_notify` | transition notifications. Failures are swallowed — a hook must not be disturbed |
-| `tower_wiring` | the folder-bot, Discord and starting-unit wiring |
+| `tower_wiring` | the folder-bot and starting-unit wiring |
 | `tower_usage` | ctx and the model. `UsedPct` separates measured from estimated in the type |
 | `tower_mux` | driving and subscribing to the backend. **No trait** — there is one backend, so there is nothing to fill a second slot |
 | `tower_hook` | a hook event → a record. A guard drops events fired outside herdr; events from other servers are kept, labelled with their server's namespace |
 | `tower_text` | width, padding, truncation, elapsed time. **One width table** — see below |
 | `tower_ui` | the supervising TUI (ratatui) |
 | `tower_wt` | the worktree lifecycle, git, reviews, running tests, driving a task to a verdict |
-| `tower_discord` | the status card, upserts, coalescing. Pinned byte for byte against a snapshot |
-| `tower_cli` | the commands and the `herdr-tower` executable: `status`, `init`, `card`, `restore`, `wt`, `hook`, `schedule`, the supervisor |
+| `tower_cli` | the commands and the `herdr-tower` executable: `status`, `init`, `restore`, `wt`, `hook`, `schedule`, the supervisor |
 
 ## How it is verified
 
@@ -32,14 +31,13 @@ cd rust && cargo test   # the unit tests plus the live ones (only inside herdr)
 cargo run -p tower_cli -- status
 ```
 
-Every rendered surface — `status` in both forms, `help`, `info`, the picker, the
-Discord card and the webhook bodies — is pinned byte for byte against a recorded
-snapshot.
+Every rendered surface — `status` in both forms, `help`, `info`, the picker — is
+pinned byte for byte against a recorded snapshot.
 
 ## Recorded snapshots
 
 The snapshots are rendered from a fixed input: the fixture store under
-`expected/fixture/` and the pinned clocks in `expected/NOW`, `card.NOW` and
+`expected/fixture/` and the pinned clocks in `expected/NOW` and
 `info.NOW`. The fixture is not a sample — every row in it is a case that once
 rendered wrong somewhere, such as an ordering inverted within one state or an
 ellipsis added outside the width budget.

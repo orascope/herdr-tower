@@ -255,8 +255,6 @@ pub enum Action {
 pub struct LocalInfo {
     /// Agent ID to model and context share.
     pub ctx: HashMap<String, CtxInfo>,
-    /// Session name to its Discord mark (`⌁`, or `⌁` plus a channel label).
-    pub wired: HashMap<String, String>,
     /// `None` until the first sweep. An empty map would mean both "nothing
     /// pinned" and "not looked yet", and the header would then announce that
     /// all three CLIs were on automatic before it had read a single file.
@@ -349,8 +347,6 @@ pub struct Settings {
     pub version: String,
     /// How often the pane preview is re-captured.
     pub preview_interval: Duration,
-    /// Discord channel ID to human label.
-    pub channel_labels: HashMap<String, String>,
     /// This binary, for starting the resident supervisor.
     pub exe: String,
     pub resume: ResumePaths,
@@ -375,7 +371,6 @@ impl Settings {
         Settings {
             version: String::new(),
             preview_interval: cfg.preview_tick(),
-            channel_labels: cfg.channel_labels.clone(),
             exe: std::env::current_exe()
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_else(|_| "herdr-tower".into()),
@@ -2838,19 +2833,13 @@ impl App {
         let Some(a) = self.selected() else {
             return Action::Nothing;
         };
-        let wiring = tower_wiring::collect(
-            &self.settings.wiring,
-            &a.cwd,
-            &a.pane.session,
-            &self.settings.channel_labels,
-        );
+        let wiring = tower_wiring::collect(&self.settings.wiring, &a.cwd, &a.pane.session);
         let card = render_info(
             &InfoData {
                 agent: a,
                 wiring: &wiring,
                 ctx: self.local.ctx.get(&a.id),
                 branch: self.branches.get(&a.cwd).map(String::as_str),
-                labels: &self.settings.channel_labels,
                 unit: crate::info::unit_word(),
             },
             self.now,

@@ -8,18 +8,13 @@
 //! `~/.codex/hooks.json` and `~/.codex/config.toml`, files that three other
 //! vendors' programs parse.
 //!
-//! The JSON encoding is **not** implemented here. The two habits these files
-//! rely on that `serde_json` does not share — sorted object keys and `<`, `>`,
-//! `&`, U+2028, U+2029 escaped — are already settled once in
-//! [`tower_discord::to_sorted_json`] and [`tower_discord::to_sorted_json_pretty`],
-//! written for the Discord card and equally load-bearing here. Those are
-//! imported rather than copied: a second implementation of the same rule is how
-//! two encoders quietly drift apart, and the two would only be discovered to
-//! have diverged by a user whose `~/.claude.json` grew an `&`.
+//! The JSON encoding has two habits `serde_json` does not share: object keys
+//! come out sorted, and `<`, `>`, `&`, U+2028 and U+2029 are escaped
+//! ([`to_sorted_json`], [`to_sorted_json_pretty`]).
 //!
-//! What is left is the file dance around the encoder — reading a settings file
+//! The rest is the file dance around the encoder — reading a settings file
 //! nobody owns, the backup, the temporary file and the rename — plus one
-//! formatting rule the card never needed: **[`quote`] is not Rust's `{:?}`**,
+//! formatting rule: **[`quote`] is not Rust's `{:?}`**,
 //! because a `command = "…"` line is written with it and that string lands in a
 //! TOML file.
 
@@ -27,7 +22,53 @@ use std::fmt::Display;
 use std::io;
 use std::path::Path;
 
+use serde::Serialize;
 use serde_json::{Map, Value};
+
+/// Serializes compactly, with sorted keys and the escapes described above.
+///
+/// Keys are sorted because every value here is a [`Value`] built without
+/// `serde_json`'s `preserve_order` feature, whose map is a `BTreeMap`.
+pub fn to_sorted_json<T: Serialize + ?Sized>(v: &T) -> io::Result<Vec<u8>> {
+    let raw = serde_json::to_vec(v).map_err(io::Error::other)?;
+    Ok(escape_html(&raw))
+}
+
+/// Serializes with two-space indent and no trailing newline.
+pub fn to_sorted_json_pretty<T: Serialize + ?Sized>(v: &T) -> io::Result<Vec<u8>> {
+    let raw = serde_json::to_vec_pretty(v).map_err(io::Error::other)?;
+    Ok(escape_html(&raw))
+}
+
+/// Escapes `<`, `>`, `&`, U+2028 and U+2029 in an already-encoded document.
+///
+/// A second pass rather than a custom `serde_json::ser::Formatter` because the
+/// rewrite is provably equivalent and needs no parser: in a JSON document `<`,
+/// `>`, `&`, `U+2028` and `U+2029` can only occur inside a string literal —
+/// none of them is JSON syntax — and `serde_json` never emits them as part of
+/// an escape sequence it wrote itself. Their bytes are also unambiguous:
+/// `<`, `>` and `&` are ASCII, which UTF-8 never uses as a continuation byte.
+fn escape_html(src: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(src.len());
+    let mut i = 0;
+    while i < src.len() {
+        let (esc, width) = match src[i] {
+            b'<' => (&b"\\u003c"[..], 1),
+            b'>' => (&b"\\u003e"[..], 1),
+            b'&' => (&b"\\u0026"[..], 1),
+            0xE2 if src[i..].starts_with("\u{2028}".as_bytes()) => (&b"\\u2028"[..], 3),
+            0xE2 if src[i..].starts_with("\u{2029}".as_bytes()) => (&b"\\u2029"[..], 3),
+            b => {
+                out.push(b);
+                i += 1;
+                continue;
+            }
+        };
+        out.extend_from_slice(esc);
+        i += width;
+    }
+    out
+}
 
 /// A JSON object, which is what every settings file here is at the top level.
 pub type Object = Map<String, Value>;
@@ -108,7 +149,7 @@ pub fn parse_failed(path: &Path, e: impl Display) -> io::Error {
 /// wanted for it encode to the same three characters, so the idempotency check
 /// does not rewrite a file that already says what it should.
 pub fn json_key(v: &Value) -> String {
-    String::from_utf8(tower_discord::to_sorted_json(v).unwrap_or_default()).unwrap_or_default()
+    String::from_utf8(to_sorted_json(v).unwrap_or_default()).unwrap_or_default()
 }
 
 /// A TOML basic string, not Rust's `{:?}`: `\"`, `\\`, the five control
@@ -121,11 +162,6 @@ pub fn json_key(v: &Value) -> String {
 /// escapes it once wrote: `\a` and `\v` are in no TOML version and `\xHH`
 /// only in 1.1, so a path holding one of those characters made the herdr
 /// binding unparseable (#33).
-///
-/// Not the same rule as `tower_discord`'s own private `quote`, which escapes a
-/// value going inside a quoted MIME header parameter (backslash and double
-/// quote, nothing else). Merging the two would silently stop escaping control
-/// characters here, and this output is TOML that herdr and codex parse.
 ///
 /// Only ASCII control characters are escaped, so one case that never reaches
 /// here is written down rather than papered over: a non-printable character
@@ -348,19 +384,16 @@ mod tests {
     }
     use serde_json::json;
 
-    /// Not a test of `tower_discord`'s encoder — that crate tests its own escaping.
-    /// This asserts that *these installers* go through it, because the tempting
-    /// swap (`serde_json::to_vec_pretty`, right there and one call shorter) is
-    /// silent: it produces valid JSON that every parser accepts, and the only
-    /// visible symptom would be a user's `~/.claude.json` reformatting an
-    /// unrelated `&` on every `init`.
+    /// The tempting swap (`serde_json::to_vec_pretty`, right there and one call
+    /// shorter) is silent: it produces valid JSON that every parser accepts, and
+    /// the only visible symptom would be a user's `~/.claude.json` reformatting
+    /// an unrelated `&` on every `init`.
     #[test]
-    fn the_installers_encode_through_tower_discords_escaping_not_serdes() {
+    fn the_installers_encode_with_these_escapes_not_serdes() {
         let v = json!({"cmd": "a<b>&c", "sep": "x\u{2028}y"});
-        // Every backslash on the expected side is one the encoder has to put on
-        // the wire.
+        // Every backslash on the expected side is one the encoder has to write.
         assert_eq!(
-            String::from_utf8(tower_discord::to_sorted_json(&v).unwrap()).unwrap(),
+            String::from_utf8(to_sorted_json(&v).unwrap()).unwrap(),
             "{\"cmd\":\"a\\u003cb\\u003e\\u0026c\",\"sep\":\"x\\u2028y\"}"
         );
     }
@@ -373,9 +406,47 @@ mod tests {
     fn object_keys_come_out_sorted() {
         let v = json!({"z": 1, "a": {"y": [], "b": {}}});
         assert_eq!(
-            String::from_utf8(tower_discord::to_sorted_json_pretty(&v).unwrap()).unwrap(),
+            String::from_utf8(to_sorted_json_pretty(&v).unwrap()).unwrap(),
             "{\n  \"a\": {\n    \"b\": {},\n    \"y\": []\n  },\n  \"z\": 1\n}"
         );
+    }
+
+    /// U+2028 and U+2029 share their lead byte `0xE2` with every other character
+    /// in that range, and one mis-measured branch would corrupt them or cut a
+    /// character in half.
+    #[test]
+    fn other_characters_sharing_the_lead_byte_are_left_alone() {
+        let text = "… → ☃ 세션 \u{2027}\u{202a}\u{2030} 🗼";
+        assert_eq!(
+            String::from_utf8(to_sorted_json(&json!(text)).unwrap()).unwrap(),
+            format!("\"{text}\"")
+        );
+    }
+
+    /// Generated text against the rules: nothing that must be escaped survives,
+    /// and parsing gives the text back, an escape that dropped or doubled a
+    /// character would corrupt a settings file without ever failing to encode.
+    #[test]
+    fn a_generated_text_survives_the_escape_and_comes_back_unchanged() {
+        const PIECES: &[&str] = &[
+            "a", " ", "…", "→", "세션", "🗼", "<", ">", "&", "\"", "\\", "/", "\n", "\t",
+            "\u{2028}", "\u{2029}", "\u{0}", "\u{1b}",
+        ];
+        let mut rng = tower_testrng::Rng::new(0xBEEF);
+        for _ in 0..5_000 {
+            let content: String = (0..rng.below(12))
+                .map(|_| *rng.pick(PIECES).unwrap())
+                .collect();
+            for encode in [to_sorted_json::<Value>, to_sorted_json_pretty::<Value>] {
+                let out = encode(&json!({ "content": content })).unwrap();
+                let text = String::from_utf8(out.clone()).unwrap();
+                for raw in ['<', '>', '&', '\u{2028}', '\u{2029}'] {
+                    assert!(!text.contains(raw), "{raw:?} left unescaped in {text}");
+                }
+                let back: Value = serde_json::from_slice(&out).unwrap();
+                assert_eq!(back["content"], Value::String(content.clone()));
+            }
+        }
     }
 
     #[test]

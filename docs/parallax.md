@@ -20,8 +20,7 @@ answer a handoff in Parallax.
 - **`herdr-tower status`**: `PARALLAX — N handoffs waiting on you` after the
   table, only when there are any
 - **A notification** when more handoffs wait than at the last answer: a desktop
-  notice, and a line in the notification channel if `notify_discord` is on
-  (mentions switched off, as for every notice). Restarting the supervisor does
+  notice. Restarting the supervisor does
   not repeat it. One answered and a new one asked between two polls leave the
   number the same, so that one is not announced
 

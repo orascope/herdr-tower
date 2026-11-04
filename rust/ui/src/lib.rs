@@ -91,7 +91,7 @@ pub use broadcast::{
 };
 pub use dock::{in_dock, needs_pin, needs_tab_label, DOCK_LABEL, DOCK_PIN_INTERVAL};
 pub use feed::{Feed, HOST_INTERVAL, LOCAL_INTERVAL, POLL_INTERVAL};
-pub use info::{render_info, unit_word, unit_word_for, wired_sessions, InfoData};
+pub use info::{render_info, unit_word, unit_word_for, InfoData};
 pub use input::TextInput;
 pub use remote::{
     RemoteAction, RemoteAgent, RemoteMachine, RemoteRequest, RemoteSchedule, UnseenPane,

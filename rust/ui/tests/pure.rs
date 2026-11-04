@@ -12,7 +12,6 @@ mod common;
 use common::{agent, at};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use std::collections::HashMap;
 use time::Duration;
 use tower_state::{Agent, AgentState};
 use tower_ui::view::{list_window, split_body, state_label};
@@ -475,14 +474,12 @@ fn the_card_says_the_name_somebody_gave_the_pane() {
     a.state_since = at(0);
     a.updated_at = at(0);
 
-    let labels = HashMap::new();
     let card = render_info(
         &InfoData {
             agent: &a,
             wiring: &Wiring::default(),
             ctx: None,
             branch: None,
-            labels: &labels,
             unit: unit_word_for("macos"),
         },
         at(0),
@@ -506,7 +503,6 @@ fn the_card_says_the_name_somebody_gave_the_pane() {
             wiring: &Wiring::default(),
             ctx: None,
             branch: None,
-            labels: &labels,
             unit: unit_word_for("macos"),
         },
         at(0),
@@ -528,14 +524,12 @@ fn a_state_a_few_seconds_old_reads_as_a_length_not_a_moment() {
     a.state_since = at(0);
     a.updated_at = at(0);
 
-    let labels = HashMap::new();
     let card = render_info(
         &InfoData {
             agent: &a,
             wiring: &Wiring::default(),
             ctx: None,
             branch: None,
-            labels: &labels,
             unit: unit_word_for("macos"),
         },
         now,
@@ -563,7 +557,6 @@ fn a_state_a_few_seconds_old_reads_as_a_length_not_a_moment() {
 fn the_cards_session_line_shows_the_id_the_screen_shows() {
     let home = tempfile::tempdir().unwrap();
     let paths = ResumePaths::under(home.path());
-    let labels = HashMap::new();
     let card = |sid: &str| {
         let mut a = agent("claude-1", "claude", "s", AgentState::Working);
         a.session_id = sid.into();
@@ -573,7 +566,6 @@ fn the_cards_session_line_shows_the_id_the_screen_shows() {
                 wiring: &Wiring::default(),
                 ctx: None,
                 branch: None,
-                labels: &labels,
                 unit: unit_word_for("macos"),
             },
             at(0),

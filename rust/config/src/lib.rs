@@ -7,7 +7,6 @@
 //! — the tower runs on defaults. Configuration that can break the tool by being
 //! absent is configuration that should not exist.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -34,20 +33,8 @@ pub const MIN_PREVIEW_TICK: Duration = Duration::from_millis(200);
 /// the field directly gets you the raw `Option` and loses the fallback.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
-    /// Where the status card is posted.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub discord_webhook_url: Option<String>,
-    /// Where transition notifications go. Falls back to the card webhook when
-    /// unset, so a single webhook still works.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub notify_webhook_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notify_macos: Option<bool>,
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub notify_discord: bool,
-    /// Discord channel ID to a human-readable label.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub channel_labels: HashMap<String, String>,
     /// A duration string such as `"500ms"`. Kept as text so an unparseable
     /// value degrades to the default instead of refusing to load the file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -137,7 +124,7 @@ pub struct McpConfig {
     /// whatever a client was granted. See [`McpConfig::act_enabled`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub act: Option<bool>,
-    /// `false` stops posting each remote action to the notification channel.
+    /// `false` stops the desktop notification for each remote action.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notify_acts: Option<bool>,
 }
@@ -225,7 +212,7 @@ impl McpConfig {
         self.act.unwrap_or(true)
     }
 
-    /// Whether each remote action is also posted to the notification channel.
+    /// Whether each remote action is also shown in a desktop notification.
     /// On unless turned off: an action nobody expected should show up where
     /// the WAITs arrive.
     pub fn notify_acts_enabled(&self) -> bool {
@@ -246,10 +233,6 @@ impl McpConfig {
             set
         }
     }
-}
-
-fn is_false(b: &bool) -> bool {
-    !*b
 }
 
 impl Config {
@@ -351,17 +334,6 @@ impl Config {
     pub fn id_labels_enabled(&self) -> bool {
         self.id_labels.unwrap_or(true)
     }
-
-    /// Where notifications go: the dedicated webhook if there is one, else the
-    /// card's. Splitting them is opt-in, so an existing single-webhook setup
-    /// keeps working.
-    pub fn notify_url(&self) -> Option<&str> {
-        self.notify_webhook_url
-            .as_deref()
-            .filter(|s| !s.is_empty())
-            .or(self.discord_webhook_url.as_deref())
-            .filter(|s| !s.is_empty())
-    }
 }
 
 /// The config file path, honoring `HERDR_TOWER_CONFIG`.
@@ -375,7 +347,7 @@ pub fn path() -> Option<PathBuf> {
     // A service or container that exports `HOME=` would otherwise build the
     // *relative* path `.config/herdr-tower/config.json`, resolved against each
     // process's working directory — so a hook (which inherits the agent's cwd) and
-    // the tower would load different webhooks and different notification settings,
+    // the tower would load different notification settings,
     // and a checkout containing that path could supply the hook's configuration.
     let home = std::env::var("HOME").ok().filter(|h| !h.is_empty())?;
     Some(
@@ -399,8 +371,7 @@ pub fn load() -> Config {
 /// [`load`], plus one line for each thing in the file that was not used.
 ///
 /// Falling back is right, falling back without a word is not: a stray comma
-/// turned off the Discord webhook and every notification with nothing to say
-/// why, and a misspelled key is ignored just as quietly. The lines are for
+/// turned off every notification with nothing to say why, and a misspelled key is ignored just as quietly. The lines are for
 /// the supervisor's log and `doctor`, which are where somebody looks once the
 /// notifications stop. Empty when the file is missing or fully understood.
 pub fn load_checked() -> (Config, Vec<String>) {
@@ -459,8 +430,8 @@ fn parse_checked(body: &[u8]) -> (Config, Vec<String>) {
 /// A list where an object of settings belongs, which serde would accept.
 ///
 /// serde reads a struct from a JSON array too, field by field in declaration
-/// order, so `["https://…"]` loaded as a config whose Discord webhook was that
-/// URL, and `[]` as an empty one, with nothing to say either was odd. The file
+/// order, so `[true]` loaded as a config whose first setting was that value,
+/// and `[]` as an empty one, with nothing to say either was odd. The file
 /// and its `mcp` section are objects; a list in either place is refused like
 /// any other value of the wrong type. The file is judged by its first
 /// character, so a broken list is still called a list; `mcp` only once the
@@ -534,10 +505,8 @@ mod tests {
 
     #[test]
     fn a_fully_understood_file_has_no_problems() {
-        let (cfg, problems) = parse_checked(
-            br#"{"notify_discord": true, "channel_labels": {"123": "ops"}, "mcp": {"act": false}}"#,
-        );
-        assert!(cfg.notify_discord);
+        let (cfg, problems) = parse_checked(br#"{"usage_tab": true, "mcp": {"act": false}}"#);
+        assert_eq!(cfg.usage_tab, Some(true));
         assert!(!cfg.mcp.act_enabled());
         assert!(problems.is_empty(), "{problems:?}");
     }
@@ -559,8 +528,8 @@ mod tests {
 
     #[test]
     fn a_malformed_file_falls_back_and_says_where() {
-        let (cfg, problems) = parse_checked(b"{\"notify_discord\": true,}");
-        assert!(!cfg.notify_discord);
+        let (cfg, problems) = parse_checked(b"{\"usage_tab\": true,}");
+        assert_eq!(cfg.usage_tab, None);
         assert_eq!(problems.len(), 1);
         assert!(problems[0].contains("line 1"), "{}", problems[0]);
         assert!(problems[0].contains("default"), "{}", problems[0]);
@@ -568,7 +537,7 @@ mod tests {
 
     #[test]
     fn a_wrong_type_falls_back_and_says_so() {
-        let (cfg, problems) = parse_checked(br#"{"notify_discord": "yes", "notify_macos": false}"#);
+        let (cfg, problems) = parse_checked(br#"{"usage_tab": "yes", "notify_macos": false}"#);
         assert_eq!(cfg.notify_macos, None);
         assert_eq!(problems.len(), 1);
         assert!(problems[0].contains("wrong type"), "{}", problems[0]);
@@ -581,7 +550,7 @@ mod tests {
 
     #[test]
     fn trailing_content_is_not_a_valid_file() {
-        let (_, problems) = parse_checked(br#"{"notify_discord": true} {}"#);
+        let (_, problems) = parse_checked(br#"{"usage_tab": true} {}"#);
         assert_eq!(problems.len(), 1);
     }
 
@@ -633,12 +602,6 @@ mod tests {
                 1,
                 "\"x\"",
             ),
-            (
-                "channel labels take any key",
-                br#"{"channel_labels": {"anything": "x"}}"#,
-                0,
-                "",
-            ),
             ("mcp set to null", br#"{"mcp": null}"#, 1, "wrong type"),
             (
                 "an unknown key under mcp",
@@ -648,7 +611,7 @@ mod tests {
             ),
             (
                 "the second line",
-                b"{\n  \"notify_discord\": true,,\n}",
+                b"{\n  \"usage_tab\": true,,\n}",
                 1,
                 "line 2",
             ),
@@ -668,13 +631,12 @@ mod tests {
     #[test]
     fn parse_checked_agrees_with_plain_deserializing_and_names_each_unknown_key() {
         let known: &[(&str, serde_json::Value)] = &[
-            ("notify_discord", serde_json::json!(true)),
+            ("usage_tab", serde_json::json!(true)),
             ("notify_macos", serde_json::json!(false)),
             ("preview_interval", serde_json::json!("500ms")),
             ("dock_keep", serde_json::json!(true)),
             ("id_labels", serde_json::json!(false)),
             ("usage_guard_5h", serde_json::json!("off")),
-            ("channel_labels", serde_json::json!({"1": "ops"})),
             (
                 "mcp",
                 serde_json::json!({"act": false, "listen": "127.0.0.1:9"}),
@@ -743,7 +705,7 @@ mod tests {
                 format!("{pad}{}", serde_json::Value::Array(items))
             } else {
                 let mut obj = serde_json::Map::new();
-                obj.insert("channel_labels".into(), serde_json::json!({"1": "a"}));
+                obj.insert("usage_tab".into(), serde_json::json!(true));
                 if let Some(v) = rng.pick(&mcp_values).unwrap() {
                     obj.insert("mcp".into(), v.clone());
                 }
@@ -758,7 +720,7 @@ mod tests {
             let (cfg, problems) = parse_checked(body.as_bytes());
             if oracle {
                 assert_eq!(problems, [found.unwrap()], "round {round}");
-                assert!(cfg.channel_labels.is_empty(), "round {round}: defaults");
+                assert_eq!(cfg.usage_tab, None, "round {round}: defaults");
             }
         }
     }
@@ -784,7 +746,7 @@ mod tests {
     fn a_written_config_reads_back_clean() {
         let bodies: &[&[u8]] = &[
             b"{}",
-            br#"{"notify_discord": true, "discord_webhook_url": "https://x", "channel_labels": {"1": "a"}}"#,
+            br#"{"usage_tab": true, "notify_macos": false}"#,
             br#"{"wait_renotify": "off", "mcp": {"redirect_uris": ["https://a"], "enabled": false}}"#,
             br#"{"usage_guard_claude_5h": "40", "parallax": false, "dock_keep": true, "usage_tab": true}"#,
         ];
@@ -812,7 +774,6 @@ mod tests {
         assert!(c.update_check_enabled(), "on unless turned off");
         assert_eq!(c.usage_guard_5h(), Some(25), "the guard holds at 25% left");
         assert_eq!(c.usage_guard_7d(), Some(25));
-        assert_eq!(c.notify_url(), None);
     }
 
     /// Explicit `false` has to survive, or a user cannot turn a default off.
@@ -875,30 +836,22 @@ mod tests {
         assert_eq!(with("soon").wait_reminder(), Some(DEFAULT_WAIT_RENOTIFY));
     }
 
-    /// Splitting the notification webhook is opt-in: a single-webhook setup
-    /// must keep working untouched.
+    /// A file written before the Discord settings were removed still loads:
+    /// its other settings apply, the retired keys are named, and their values
+    /// (webhook URLs carry a token) stay out of what is reported.
     #[test]
-    fn notify_falls_back_to_the_card_webhook() {
-        let card_only = Config {
-            discord_webhook_url: Some("https://card".into()),
-            ..Default::default()
-        };
-        assert_eq!(card_only.notify_url(), Some("https://card"));
-
-        let split = Config {
-            discord_webhook_url: Some("https://card".into()),
-            notify_webhook_url: Some("https://notify".into()),
-            ..Default::default()
-        };
-        assert_eq!(split.notify_url(), Some("https://notify"));
-
-        // An empty string is not a configured webhook.
-        let empty = Config {
-            discord_webhook_url: Some("https://card".into()),
-            notify_webhook_url: Some(String::new()),
-            ..Default::default()
-        };
-        assert_eq!(empty.notify_url(), Some("https://card"));
+    fn a_retired_secret_in_the_file_is_ignored_and_not_quoted() {
+        let (cfg, problems) = parse_checked(
+            br#"{"discord_webhook_url": "https://d/token-a", "notify_webhook_url": "https://d/token-b", "notify_discord": true, "channel_labels": {"1": "ops"}, "notify_macos": false}"#,
+        );
+        assert_eq!(cfg.notify_macos, Some(false));
+        assert_eq!(problems.len(), 4, "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("discord_webhook_url")));
+        for p in &problems {
+            assert!(!p.contains("token"), "{p}");
+        }
+        let written = String::from_utf8(serde_json::to_vec(&cfg).unwrap()).unwrap();
+        assert!(!written.contains("token"), "{written}");
     }
 
     /// Malformed JSON yields defaults: the tower keeps reporting while somebody

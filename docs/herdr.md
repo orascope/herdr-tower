@@ -171,10 +171,10 @@ click jumps there as `enter` does, and the wheel moves the selection.
 
 ### Putting ctx and the model in herdr's sidebar
 
-herdr knows the kind of agent and its state, but not the context usage, the model
-or the Discord wiring (⌁). The tower computes those and hands them to herdr's
-sidebar — automatically on every card refresh, with a fifteen-minute TTL so a
-stopped tower does not leave stale values behind.
+herdr knows the kind of agent and its state, but not the context usage or the
+model. The tower computes those and hands them to herdr's sidebar — the resident
+supervisor does it every minute, with a fifteen-minute TTL so a stopped tower does
+not leave stale values behind.
 
 To see them, add rows to herdr's configuration — the `rows_by_agent` block for
 `claude` in [Recommended herdr settings](../README.md#recommended-herdr-settings).

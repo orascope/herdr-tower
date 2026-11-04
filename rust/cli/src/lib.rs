@@ -58,7 +58,6 @@ pub mod versioncmd;
 pub mod waitcmd;
 pub mod wtcmd;
 
-use std::collections::HashMap;
 use std::fmt::Write as _;
 
 use tower_state::{Agent, AgentState, Store};
@@ -153,15 +152,11 @@ pub fn parallax_section(out: &mut impl std::io::Write, waiting: u64) -> std::io:
 const TASK_MAX_WIDTH: usize = 40;
 
 /// Renders the store as a table, or as JSON when asked.
-///
-/// `wired` maps a workspace name to its Discord bot mark, decided per session
-/// rather than per folder — a working session in a bot's folder is not the bot.
 pub fn status(
     out: &mut impl std::io::Write,
     store: &Store,
     json_out: bool,
     now: OffsetDateTime,
-    wired: &HashMap<String, String>,
 ) -> std::io::Result<()> {
     let agents = store.list()?;
 
@@ -182,15 +177,10 @@ pub fn status(
         .map(|s| s.to_string())
         .collect()];
     for a in &agents {
-        let mut session = a.pane.session.clone();
-        if let Some(mark) = wired.get(&session).filter(|m| !m.is_empty()) {
-            session.push(' ');
-            session.push_str(mark);
-        }
         rows.push(vec![
             state_label(a, now).to_string(),
             a.kind.clone(),
-            session,
+            a.pane.session.clone(),
             // `question_first`: this table is read in a terminal and over ssh,
             // with no detail view behind it and no key to press, so a pending
             // question takes the cell when there is one.

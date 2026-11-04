@@ -129,7 +129,7 @@ pub fn gemini_dir(home: &Path) -> PathBuf {
 /// other's row with its model and context share. Every kind digs in its own
 /// place instead.
 ///
-/// The TUI, the Discord cards and `info` all call this, so the attribution
+/// The TUI, the sidebar and `info` all call this, so the attribution
 /// rules live here once rather than being re-derived — and re-broken — in three
 /// renderers.
 pub fn agent_ctx(

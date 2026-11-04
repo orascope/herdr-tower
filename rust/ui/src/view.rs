@@ -193,8 +193,7 @@ pub fn summary(agents: &[Agent]) -> Vec<Span<'static>> {
 /// Only the warning is in the header. The defaults themselves used to be a
 /// whole section there (`default model ▌Claude opus · ▌Codex … · ▌Gemini
 /// auto`), which took the room the machine's load now has; a default that is
-/// not Fable is nothing to act on from the tower. The Discord card still lists
-/// all three.
+/// not Fable is nothing to act on from the tower.
 pub fn fable_warning(app: &App) -> Option<Vec<Span<'static>>> {
     let d = app.local().def_models.as_ref()?;
     if !tower_usage::is_fable(&d.claude) {
@@ -583,10 +582,6 @@ fn row_with_gutter(app: &App, a: &Agent, gutter: String, width: usize) -> Line<'
         shorten_home(&a.cwd),
         since(a.state_since, app.now()),
     ))]);
-    if let Some(mark) = app.local().wired.get(&a.pane.session) {
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(mark.clone(), theme::discord()));
-    }
     if let Some(br) = app.branch_of(&a.cwd) {
         spans.push(Span::raw(" "));
         spans.push(Span::styled(format!("⎇ {br}"), theme::title()));

@@ -7,7 +7,6 @@
 //! `common` for the shared wiring functions (store, backend, notifications)
 //! and `error` for the single error type.
 
-pub mod card;
 pub mod common;
 pub mod config;
 pub mod dock;
@@ -16,11 +15,11 @@ pub mod hook;
 pub mod init;
 pub mod mcp;
 pub mod rest;
+pub mod sidebar;
 pub mod status;
 pub mod tui;
 pub mod usage;
 
-pub use card::run_card;
 pub use config::run_config;
 pub use dock::run_dock;
 pub use error::{CliError, Result};

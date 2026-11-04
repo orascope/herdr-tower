@@ -1679,7 +1679,6 @@ dependencies = [
  "tempfile",
  "time",
  "tower_config",
- "tower_discord",
  "tower_hook",
  "tower_mux",
  "tower_notify",
@@ -1706,21 +1705,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tower_testrng",
-]
-
-[[package]]
-name = "tower_discord"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "tempfile",
- "time",
- "tower_config",
- "tower_state",
- "tower_testrng",
- "tower_usage",
- "ureq",
 ]
 
 [[package]]

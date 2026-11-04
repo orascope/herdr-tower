@@ -82,7 +82,7 @@ pub fn install_gemini_hooks(
     if let Some(raw) = &raw {
         settingsfile::backup(hooks_path, BAK_SUFFIX, raw, 0o600)?;
     }
-    let mut body = tower_discord::to_sorted_json_pretty(&Value::Object(hooks))?;
+    let mut body = settingsfile::to_sorted_json_pretty(&Value::Object(hooks))?;
     body.push(b'\n');
     // A freshly installed agy has no `config/` folder yet (measured on WSL2,
     // 2026-09-07), so the directory is created rather than assumed.

@@ -258,7 +258,7 @@ pub fn current_branch(repo: &str) -> Result<String> {
 /// file rather than by running git.
 ///
 /// For the places that *show* a branch — the tower's rows, herdr's sidebar,
-/// the Discord card, a preview window's title — on every pass: a git process
+/// a preview window's title — on every pass: a git process
 /// per folder costs ~17 ms, reading one small file costs microseconds. A
 /// worker often moves its worktree to a branch of its own
 /// (`agent/i-2919` → `agent/explain-2969-stage2`), and the branch in the task

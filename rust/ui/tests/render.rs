@@ -1591,8 +1591,7 @@ fn the_tower_draws_into_a_buffer() {
     );
 }
 
-/// A row wears what is true of it: the Discord mark for a session a bot drives,
-/// and the branch when the folder is a worktree.
+/// A row wears what is true of it: the branch when the folder is a worktree.
 #[test]
 fn a_row_wears_its_marks() {
     let mut f = fixture();
@@ -1608,18 +1607,8 @@ fn a_row_wears_its_marks() {
         daemon: None,
         now: t0(),
     });
-    let mut wired = HashMap::new();
-    wired.insert("collab-bot".to_string(), "⌁운영".to_string());
-    f.feed(Event::Local(LocalInfo {
-        wired,
-        ..Default::default()
-    }));
 
     let v = screen(&f, 200, 40);
-    assert!(
-        v.contains("⌁운영"),
-        "the Discord mark carries its label:\n{v}"
-    );
     assert!(v.contains("⎇ feat/tower"), "{v}");
     assert!(!v.contains("#52"), "no PR looked up yet:\n{v}");
 
@@ -1908,7 +1897,6 @@ fn the_detail_card_reports_only_what_herdr_knows() {
         "herdr",
         "p-claude-7",
         "approval needed",
-        "Discord    not connected",
         "session    0192abcd → if it dies",
     ] {
         assert!(v.contains(want), "the card should say {want:?}:\n{v}");

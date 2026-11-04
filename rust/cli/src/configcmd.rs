@@ -10,7 +10,7 @@
 //! and nothing is written unless the result still reads as a `Config`. That
 //! last check matters more than it looks: `tower_config::load` answers a file
 //! it cannot read with the defaults, so one badly typed value would otherwise
-//! quietly drop the webhooks and every other setting with it.
+//! quietly drop every other setting with it.
 
 use std::io::{self, Write};
 use std::path::Path;
@@ -21,7 +21,7 @@ use tower_config::Config;
 
 pub const USAGE: &str = "usage: herdr-tower config [get [key] [--reveal] | set <key> <value> | unset <key> | keys | path]";
 
-/// What a secret shows as, unless `--reveal`.
+/// What a retired secret shows as, unless `--reveal`.
 pub const HIDDEN: &str = "<hidden>";
 
 /// The value at a dotted key, if set.
@@ -34,15 +34,12 @@ fn known(name: &str) -> Result<&'static Key, String> {
         .ok_or_else(|| format!("no setting {name:?} — `herdr-tower config keys` lists them"))
 }
 
-/// A copy with every secret replaced by [`HIDDEN`].
+/// A copy with every retired secret replaced by [`HIDDEN`].
 pub fn masked(doc: &Value) -> Value {
     let mut out = doc.clone();
-    for k in keys::KEYS.iter().filter(|k| k.secret) {
-        let mut parts: Vec<&str> = k.name.split('.').collect();
-        let last = parts.pop().expect("a key has a name");
-        let parent = parts.into_iter().try_fold(&mut out, |v, p| v.get_mut(p));
-        if let Some(Value::Object(m)) = parent {
-            if let Some(v) = m.get_mut(last) {
+    if let Value::Object(m) = &mut out {
+        for name in keys::RETIRED_SECRETS {
+            if let Some(v) = m.get_mut(*name) {
                 if !v.is_null() {
                     *v = Value::String(HIDDEN.into());
                 }
@@ -62,7 +59,6 @@ pub fn get(doc: &Value, name: Option<&str>, reveal: bool) -> Result<String, Stri
     let key = known(name)?;
     match lookup(doc, name) {
         None | Some(Value::Null) => Ok(format!("(not set — {})", key.about)),
-        Some(_) if key.secret && !reveal => Ok(format!("{HIDDEN} (--reveal shows it)")),
         Some(Value::String(s)) => Ok(s.clone()),
         Some(v) => Ok(serde_json::to_string(v).unwrap_or_default()),
     }
@@ -104,9 +100,12 @@ pub fn set(doc: &mut Value, name: &str, raw: &str) -> Result<&'static Key, Strin
     Ok(key)
 }
 
-/// `unset`: back to the default. An emptied section goes too.
+/// `unset`: back to the default. An emptied section goes too. A retired key can
+/// be unset though it is no longer a setting: this is how it leaves the file.
 pub fn unset(doc: &mut Value, name: &str) -> Result<bool, String> {
-    known(name)?;
+    if !keys::is_retired(name) {
+        known(name)?;
+    }
     let mut next = doc.clone();
     let parts: Vec<&str> = name.split('.').collect();
     let removed = match parts.as_slice() {
@@ -138,11 +137,10 @@ pub fn keys_text() -> String {
     let mut out = String::new();
     for k in keys::KEYS {
         out.push_str(&format!(
-            "{:<22} {:<13} {}{}\n{:<36} applies {}\n",
+            "{:<22} {:<13} {}\n{:<36} applies {}\n",
             k.name,
             k.kind.label(),
             k.about,
-            if k.secret { " [secret]" } else { "" },
             "",
             k.applies
         ));
@@ -258,11 +256,7 @@ pub fn run(w: &mut dyn Write, path: &Path, args: &[String]) -> Result<(), String
                 write(path, &doc).map_err(io)?;
                 Ok((doc, key))
             })?;
-            let shown = if key.secret {
-                HIDDEN.to_string()
-            } else {
-                get(&doc, Some(name), true)?
-            };
+            let shown = get(&doc, Some(name), true)?;
             writeln!(w, "{name} = {shown}  (applies {})", key.applies).map_err(io)
         }
         ["unset", name] => {
@@ -274,7 +268,9 @@ pub fn run(w: &mut dyn Write, path: &Path, args: &[String]) -> Result<(), String
                 }
                 Ok(removed)
             })?;
-            if removed {
+            if removed && keys::is_retired(name) {
+                writeln!(w, "{name} removed from the file").map_err(io)
+            } else if removed {
                 let key = known(name)?;
                 writeln!(
                     w,
@@ -313,18 +309,17 @@ mod tests {
 
     #[test]
     fn set_writes_a_nested_key_and_keeps_everything_else() {
-        let mut doc = json!({"discord_webhook_url":"https://d/x","future_key":{"a":1}});
+        let mut doc = json!({"future_key":{"a":1}});
         set(&mut doc, "mcp.public_url", "https://mac.t.ts.net").unwrap();
         set(&mut doc, "wait_renotify", "off").unwrap();
-        set(&mut doc, "notify_discord", "on").unwrap();
+        set(&mut doc, "usage_tab", "on").unwrap();
         assert_eq!(
             doc,
             json!({
-                "discord_webhook_url":"https://d/x",
                 "future_key":{"a":1},
                 "mcp":{"public_url":"https://mac.t.ts.net"},
                 "wait_renotify":"off",
-                "notify_discord":true
+                "usage_tab":true
             })
         );
     }
@@ -390,27 +385,31 @@ mod tests {
     fn nothing_is_written_that_would_not_load() {
         // A hand-edited `mcp` that is not an object: setting under it must not
         // produce a file `load()` would replace with the defaults.
-        let mut doc = json!({"mcp": "oops", "discord_webhook_url":"https://d/x"});
+        let mut doc = json!({"mcp": "oops", "usage_tab":true});
         assert!(set(&mut doc, "mcp.act", "false").is_err());
         let mut doc = json!({"notify_macos": "yes please"});
-        let e = set(&mut doc, "notify_discord", "true").unwrap_err();
+        let e = set(&mut doc, "usage_tab", "true").unwrap_err();
         assert!(e.contains("would not load"), "{e}");
         assert_eq!(doc, json!({"notify_macos": "yes please"}));
     }
 
+    /// An older install's file still holds its webhook URLs, which carry their
+    /// tokens. They are no settings any more, and they stay off the screen:
+    /// `config` is reachable from a phone through the MCP `tower` tool.
     #[test]
-    fn secrets_stay_hidden_unless_revealed() {
-        let doc = json!({"discord_webhook_url":"https://d/secret","notify_macos":true});
-        let all = get(&doc, None, false).unwrap();
-        assert!(!all.contains("secret") && all.contains(HIDDEN), "{all}");
-        assert!(get(&doc, None, true).unwrap().contains("https://d/secret"));
-        assert!(get(&doc, Some("discord_webhook_url"), false)
-            .unwrap()
-            .starts_with(HIDDEN));
-        assert_eq!(
-            get(&doc, Some("discord_webhook_url"), true).unwrap(),
-            "https://d/secret"
-        );
+    fn retired_secrets_stay_hidden_unless_revealed() {
+        for name in keys::RETIRED_SECRETS {
+            let doc = json!({*name:"https://d/secret","notify_macos":true});
+            let all = get(&doc, None, false).unwrap();
+            assert!(!all.contains("d/secret") && all.contains(HIDDEN), "{all}");
+            assert!(get(&doc, None, true).unwrap().contains("https://d/secret"));
+            for reveal in [false, true] {
+                let one = get(&doc, Some(name), reveal).unwrap_err();
+                assert!(!one.contains("d/secret"), "{one}");
+            }
+            assert!(set(&mut doc.clone(), name, "https://evil.example").is_err());
+        }
+        let doc = json!({"notify_macos":true});
         assert_eq!(get(&doc, Some("notify_macos"), false).unwrap(), "true");
         assert!(get(&doc, Some("wait_renotify"), false)
             .unwrap()
@@ -459,12 +458,40 @@ mod tests {
         );
     }
 
+    /// Through the command itself, against a real file: `set` on another key
+    /// neither loses a retired secret nor prints it, and `unset` removes it.
     #[test]
-    fn a_secret_set_is_not_echoed() {
+    fn a_retired_secret_survives_a_set_unprinted_until_it_is_unset() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.json");
-        let out = run_in(&path, &["set", "notify_webhook_url", "https://d/secret"]).unwrap();
-        assert!(!out.contains("secret") && out.contains(HIDDEN), "{out}");
+        std::fs::write(
+            &path,
+            r#"{"discord_webhook_url":"https://d/secret","notify_webhook_url":"https://d/secret2"}"#,
+        )
+        .unwrap();
+        let out = run_in(&path, &["set", "usage_tab", "on"]).unwrap();
+        assert!(!out.contains("d/secret"), "{out}");
+        let out = run_in(&path, &[]).unwrap();
+        assert!(!out.contains("d/secret") && out.contains(HIDDEN), "{out}");
+        assert!(read(&path).unwrap().get("discord_webhook_url").is_some());
+
+        let out = run_in(&path, &["unset", "discord_webhook_url"]).unwrap();
+        assert!(
+            out.contains("removed") && !out.contains("d/secret"),
+            "{out}"
+        );
+        let doc = read(&path).unwrap();
+        assert!(doc.get("discord_webhook_url").is_none(), "{doc}");
+        assert!(doc.get("notify_webhook_url").is_some(), "{doc}");
+
+        std::fs::write(
+            &path,
+            r#"{"notify_discord":true,"channel_labels":{"1":"ops"}}"#,
+        )
+        .unwrap();
+        run_in(&path, &["unset", "notify_discord"]).unwrap();
+        run_in(&path, &["unset", "channel_labels"]).unwrap();
+        assert_eq!(read(&path).unwrap(), json!({}));
     }
 
     #[test]
@@ -513,7 +540,6 @@ mod tests {
         for k in keys::KEYS {
             assert!(text.contains(k.name), "{}", k.name);
         }
-        assert!(text.contains("[secret]"));
     }
 
     #[test]
@@ -535,7 +561,6 @@ mod tests {
             keys::Kind::DurationOrOff => "off",
             keys::Kind::PercentOrOff => "85%",
             keys::Kind::TextList => "https://a/cb, https://b/cb",
-            keys::Kind::TextMap => r#"{"123":"general"}"#,
         }
     }
 

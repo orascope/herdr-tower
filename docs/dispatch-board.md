@@ -85,7 +85,7 @@ Board · dbstore_go_v2  1/4
 - **Nothing is marked done for you.** `review` means the worker's turn
   on the item ended; `board done` is yours to run.
 - **Ready for review is announced.** When a worker's turn on an item ends, the
-  supervisor sends one notice — desktop and the notification channel, like the
+  supervisor sends one desktop notice, like the
   Parallax and usage-guard ones: `✓ dbstore_go_v2 · board item 3 ready for
   review`. Once per delivery; a resend is announced again.
 - `board next <worker>` sends the first item queued for that worker, and
@@ -519,7 +519,7 @@ progress marked uncertain.
 - Queuing to a busy worker. A top-up instruction to an item in progress goes
   to the worker with `herdr agent prompt`.
 - Multiple backends on one board beyond "only this backend's workers".
-- The tower marking anything done; the board in the tower TUI or Discord card.
+- The tower marking anything done; the board in the tower TUI.
 
 ## Build order
 

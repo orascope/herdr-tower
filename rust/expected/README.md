@@ -38,5 +38,5 @@ way to make these files worthless.
 ## The fixture and the clock
 
 The inputs live here too — `fixture/` (the record store), and the pinned clocks
-`NOW`, `card.NOW` and `info.NOW`. Those are *inputs*, not expectations:
+`NOW` and `info.NOW`. Those are *inputs*, not expectations:
 `UPDATE_EXPECTED=1` never rewrites them.

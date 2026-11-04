@@ -7,7 +7,7 @@
 //! The pairing code comes from a second run of the binary (`mcp pair`), the
 //! way a person gets one, so the two processes sharing the grants file is
 //! part of what is tested. No herdr and no network beyond loopback: the store
-//! is the recorded fixture, and Discord is off.
+//! is the recorded fixture.
 
 #![cfg(unix)]
 
@@ -231,11 +231,8 @@ fn connect(dir: &Path, s: &Server, a: &ureq::Agent, act: bool) -> String {
     );
     assert!(!String::from_utf8_lossy(&out.stdout).contains("pairing code"));
 
-    // A pairing code for that page, the way a person gets one. `--no-discord`
-    // is the default now, and still accepted.
-    let out = tower(dir, &["mcp", "pair", &request, "--no-discord"])
-        .output()
-        .unwrap();
+    // A pairing code for that page, the way a person gets one.
+    let out = tower(dir, &["mcp", "pair", &request]).output().unwrap();
     assert!(
         out.status.success(),
         "{}",

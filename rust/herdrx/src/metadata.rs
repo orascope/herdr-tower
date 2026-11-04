@@ -5,9 +5,8 @@
 //!
 //! This is the one place the two tools complement each other instead of
 //! overlapping: herdr knows the agent kind and lifecycle state, but nothing
-//! about context usage, which model is answering, or whether a Discord bot is
-//! driving the session. The tower computes those already, so it lays them onto
-//! the surface the user is looking at anyway.
+//! about context usage or which model is answering. The tower computes those
+//! already, so it lays them onto the surface the user is looking at anyway.
 //!
 //! Display, not judgement — nothing here overrides herdr's own `agent_status`.
 
@@ -33,13 +32,11 @@ pub const SOURCE: &str = "herdr-tower";
 pub const TOKEN_CTX: &str = "ctx";
 /// The model the agent reported, e.g. `"Opus 5"`.
 pub const TOKEN_MODEL: &str = "model";
-/// `"⌁"` — the session is driven by a Discord bot.
-pub const TOKEN_WIRED: &str = "wired";
 /// `"⎇ main"` — the worktree branch.
 pub const TOKEN_BRANCH: &str = "branch";
 
 /// Every token this tool plants, for clearing them in one call.
-pub const ALL_TOKENS: [&str; 4] = [TOKEN_CTX, TOKEN_MODEL, TOKEN_WIRED, TOKEN_BRANCH];
+pub const ALL_TOKENS: [&str; 3] = [TOKEN_CTX, TOKEN_MODEL, TOKEN_BRANCH];
 
 /// herdr schema: `maxProperties` on the token map.
 const MAX_TOKENS: usize = 16;

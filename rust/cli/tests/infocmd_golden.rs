@@ -24,8 +24,6 @@
 //! The last stanza is the failure mode: `herdr-tower info` with no argument. It
 //! is part of the snapshot because the usage line is output too.
 
-use std::collections::HashMap;
-
 use time::OffsetDateTime;
 use tower_cli::infocmd::{find_agent, render_info, InfoData, INFO_USAGE};
 use tower_state::Store;
@@ -118,16 +116,15 @@ fn assert_matches_golden(got: &str, golden_file: &str) {
     );
 }
 
-/// The snapshot is rendered from a fixture store with no bots, no Discord state
-/// and no startup units, so the wiring and context are empty here too. That is
-/// what puts `not connected` and `manual` on every card in the snapshot.
+/// The snapshot is rendered from a fixture store with no bots and no startup
+/// units, so the wiring and context are empty here too. That is
+/// what puts `manual` on every card in the snapshot.
 #[test]
 fn info_prints_exactly_the_recorded_output() {
     use_fixture_home();
     let (_d, store) = fixture_store();
     let agents = store.list().unwrap();
     let now = pinned_now();
-    let labels = HashMap::new();
     let wiring = Wiring::default();
 
     let mut out = String::new();
@@ -146,7 +143,6 @@ fn info_prints_exactly_the_recorded_output() {
                 wiring: &wiring,
                 ctx: None,
                 branch: None,
-                labels: &labels,
                 // The platform the snapshot was recorded on. Read from the host
                 // instead, the card said "systemd unit" on Linux and this whole
                 // comparison failed there — on the one line where the two

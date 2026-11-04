@@ -20,7 +20,7 @@ use super::Result;
 
 const USAGE: &str = "usage: herdr-tower mcp <serve|pair|grants|revoke|on|off>\n\
   serve            run the server in the foreground (the supervisor serves it already)\n\
-  pair [id]        issue a pairing code for the approval page showing that id (5 minutes, one use)  [--discord]\n\
+  pair [id]        issue a pairing code for the approval page showing that id (5 minutes, one use)\n\
   grants           list connected clients\n\
   revoke <id>      disconnect one client  (--all: every one)\n\
   on | off         have the supervisor serve it (the default), or not";
@@ -209,28 +209,18 @@ fn local_settings(
     }
 }
 
-const PAIR_USAGE: &str = "usage: herdr-tower mcp pair [request id] [--discord]";
+const PAIR_USAGE: &str = "usage: herdr-tower mcp pair [request id]";
 
-/// `mcp pair`'s arguments: the request id, if given, and whether to post the
-/// code to the notification channel.
-///
-/// Posting is opt-in (`--discord`). It used to be on whenever Discord was, so
-/// anyone who could read the channel held every code as it was issued, and
-/// could race the person to the page — or, with a page of their own the only
-/// one open, be handed an act grant (#25). `--no-discord`, the old way to
-/// skip it, is still accepted and does what it always did: nothing is posted.
-fn pair_args(rest: &[String]) -> std::result::Result<(Option<&str>, bool), String> {
-    let mut discord = false;
+/// `mcp pair`'s one argument: the request id, if given.
+fn pair_args(rest: &[String]) -> std::result::Result<Option<&str>, String> {
     let mut request: Option<&str> = None;
     for a in rest {
         match a.as_str() {
-            "--discord" => discord = true,
-            "--no-discord" => {}
             id if !id.starts_with('-') && request.is_none() => request = Some(id),
             _ => return Err(PAIR_USAGE.into()),
         }
     }
-    Ok((request, discord))
+    Ok(request)
 }
 
 /// The page a code goes to when `mcp pair` was given no id.
@@ -301,7 +291,7 @@ fn ask_on_terminal(question: &str) -> bool {
 
 fn pair(rest: &[String]) -> Result<()> {
     use std::io::IsTerminal as _;
-    let (request, discord) = pair_args(rest)?;
+    let request = pair_args(rest)?;
     let now = OffsetDateTime::now_utc();
     let dir = tower_state::default_dir();
     let id = match request {
@@ -331,53 +321,23 @@ fn pair(rest: &[String]) -> Result<()> {
         "valid for 5 minutes, for that page only. Check the page shows request {}, then enter the code there.",
         req.id
     )?;
-    if discord {
-        let content = format!(
-            "🔑 MCP pairing code for request {} ({}): **{code}** (5 minutes, that page only)",
-            req.id,
-            tower_cli::mcp::audit::discord_escape(client)
-        );
-        match post_to_channel(&content) {
-            Some(Ok(())) => tower_cli::outln!("also posted to the notification channel.")?,
-            Some(Err(e)) => eprintln!("could not post it to Discord: {e}"),
-            None => eprintln!(
-                "not posted: Discord notifications are off (notify_discord) or have no webhook"
-            ),
-        }
-    }
     Ok(())
 }
 
-/// The notification channel's webhook and a message for it, when Discord
-/// notifications are on and a webhook is set.
-fn channel_message(content: &str) -> Option<(String, Vec<u8>)> {
-    let cfg = outbound_config();
-    if !cfg.notify_discord {
-        return None;
+/// A desktop notification about the remote server, off the calling thread: a
+/// request must not wait on `osascript`, which has no timeout. Not from a
+/// sandboxed store: a test's server is nobody's news.
+fn notify_later(body: String) {
+    if store_is_sandboxed() {
+        return;
     }
-    let url = cfg.notify_url()?.to_string();
-    let body = serde_json::json!({
-        "username": "herdr-tower",
-        "content": content,
-        // Somebody's text rides along; an `@everyone` in it must not ping.
-        "allowed_mentions": { "parse": [] },
-    });
-    Some((url, serde_json::to_vec(&body).ok()?))
-}
-
-/// Posts to the notification channel and says how it went; `None` when
-/// there is nowhere to post.
-fn post_to_channel(content: &str) -> Option<std::result::Result<(), String>> {
-    let (url, body) = channel_message(content)?;
-    let post = notify_sender().post_json?;
-    Some(post(&url, &body).map_err(|e| e.to_string()))
-}
-
-/// [`post_to_channel`] off the calling thread: a request must not wait on a
-/// slow webhook.
-fn post_to_channel_later(content: String) {
     std::thread::spawn(move || {
-        let _ = post_to_channel(&content);
+        tower_notify::announce(
+            &tower_config::load(),
+            &notify_sender(),
+            "herdr-tower remote MCP",
+            &body,
+        );
     });
 }
 
@@ -797,13 +757,13 @@ impl tools::Source for Tower {
         if let Err(err) = audit::append(&self.state_dir, e) {
             eprintln!("herdr-tower mcp: the audit line could not be written: {err}");
         }
-        if !(audit::announced(e) && outbound_config().mcp.notify_acts_enabled()) {
+        if !(audit::announced(e) && tower_config::load().mcp.notify_acts_enabled()) {
             return;
         }
-        post_to_channel_later(audit::line(e));
+        notify_later(audit::line(e));
     }
 
-    /// Every new grant, in the log and in the channel when Discord is on —
+    /// Every new grant, in the log and in a desktop notification —
     /// whatever `mcp.notify_acts` says: it is about who can act, not an act.
     fn grant_created(&self, client: &str, act: bool) {
         eprintln!(
@@ -811,7 +771,7 @@ impl tools::Source for Tower {
             client,
             if act { "yes" } else { "no" }
         );
-        post_to_channel_later(audit::grant_line(client, act));
+        notify_later(audit::grant_line(client, act));
     }
 
     fn report(&self, since: OffsetDateTime) -> Value {
@@ -992,19 +952,16 @@ mod tests {
         a.iter().map(|s| s.to_string()).collect()
     }
 
-    /// #25: the code goes to Discord only when asked; `--no-discord` is
-    /// still accepted, and changes nothing.
+    /// A code goes to the terminal that asked and nowhere else (#25), so the
+    /// flags that once posted it are refused like any other unknown flag.
     #[test]
-    fn posting_the_code_is_opt_in() {
+    fn pair_takes_one_request_id_and_no_flags() {
         let a = args(&[]);
-        assert_eq!(pair_args(&a).unwrap(), (None, false));
+        assert_eq!(pair_args(&a).unwrap(), None);
         let a = args(&["3F9A0C"]);
-        assert_eq!(pair_args(&a).unwrap(), (Some("3F9A0C"), false));
-        let a = args(&["3F9A0C", "--discord"]);
-        assert_eq!(pair_args(&a).unwrap(), (Some("3F9A0C"), true));
-        let a = args(&["--no-discord", "3F9A0C"]);
-        assert_eq!(pair_args(&a).unwrap(), (Some("3F9A0C"), false));
-        assert!(pair_args(&args(&["--dicsord"])).is_err());
+        assert_eq!(pair_args(&a).unwrap(), Some("3F9A0C"));
+        assert!(pair_args(&args(&["3F9A0C", "--discord"])).is_err());
+        assert!(pair_args(&args(&["--no-discord", "3F9A0C"])).is_err());
         assert!(pair_args(&args(&["A", "B"])).is_err());
     }
 

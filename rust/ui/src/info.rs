@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ORASCOPE Co.,Ltd. (https://www.orascope.net)
 
-//! What the wiring says about an agent: the detail card behind `i`, and the
-//! `⌁` mark on a row.
+//! What the wiring says about an agent: the detail card behind `i`.
 //!
 //! Plain text, built from values the caller already has, so the same card is
 //! printed by `herdr-tower info` without a terminal being involved. The TUI and
@@ -15,7 +14,6 @@
 //! Printing a fabricated window and a zero pid as if they were measurements is
 //! worse than printing neither.
 
-use std::collections::HashMap;
 use std::fmt::Write as _;
 
 use time::OffsetDateTime;
@@ -33,8 +31,6 @@ pub struct InfoData<'a> {
     pub ctx: Option<&'a CtxInfo>,
     /// The worktree branch for this folder, when there is one.
     pub branch: Option<&'a str>,
-    /// Discord channel ID to human label, from config.
-    pub labels: &'a HashMap<String, String>,
     /// The OS's word for a boot-time unit — macOS starts bots with LaunchAgents,
     /// Linux with systemd user units, and naming the wrong one sends the reader
     /// to a directory that does not exist on their machine.
@@ -113,53 +109,6 @@ pub fn render_info(d: &InfoData<'_>, now: OffsetDateTime) -> String {
     if let Some(bot) = &d.wiring.bot {
         let _ = writeln!(out, "  folder-bot {} (engine {})", bot.name, bot.engine);
     }
-    if let Some(dc) = &d.wiring.discord {
-        for ch in &dc.channels {
-            let label = match ch.label.as_deref().filter(|l| !l.is_empty()) {
-                Some(l) => format!("{l} ({})", ch.id),
-                None => ch.id.clone(),
-            };
-            let mention = if ch.require_mention {
-                "mention required"
-            } else {
-                "no mention"
-            };
-            let _ = writeln!(
-                out,
-                "  Discord    channel {label} · {} allowed · {mention}",
-                ch.allow_count
-            );
-        }
-        if dc.channels.is_empty() {
-            let _ = writeln!(
-                out,
-                "  Discord    connected (no channel registered · dmPolicy {})",
-                dc.dm_policy
-            );
-        }
-    } else if let Some(br) = &d.wiring.bridge {
-        let alive = if br.alive {
-            "daemon alive"
-        } else {
-            "⚠ daemon dead"
-        };
-        let _ = writeln!(
-            out,
-            "  Discord    codex bridge ({}) · {alive}",
-            shorten_home(&br.dir.to_string_lossy())
-        );
-        for id in &br.channels {
-            let label = match d.labels.get(id).filter(|l| !l.is_empty()) {
-                Some(l) => format!("{l} ({id})"),
-                None => id.clone(),
-            };
-            let _ = writeln!(out, "             channel {label}");
-        }
-    } else if d.wiring.discord_connected() {
-        let _ = writeln!(out, "  Discord    connected (via {})", d.unit);
-    } else {
-        let _ = writeln!(out, "  Discord    not connected");
-    }
 
     if d.wiring.launch_units.is_empty() {
         let _ = writeln!(out, "  launch     manual (no {})", d.unit);
@@ -195,45 +144,5 @@ pub fn render_info(d: &InfoData<'_>, now: OffsetDateTime) -> String {
         state_word(a.state),
         age(a.updated_at, now)
     );
-    out
-}
-
-/// Session name to its Discord mark (`⌁`, or `⌁` plus a channel label).
-///
-/// **Per session, not per folder.** A second session opened in a bot's folder to
-/// work in is not the bot, and neither is a dead session that never was one;
-/// marking them would tell the user that typing there reaches Discord. That was
-/// the WSL2 finding of 2026-09-10, and it is why this asks
-/// [`Info::drives_session`] rather than [`Info::discord_connected`].
-///
-/// The label is included where there is one, as `status` includes it: a bare
-/// `⌁` here and `⌁` plus the label there would be two answers to one question.
-pub fn wired_sessions(
-    agents: &[Agent],
-    paths: &tower_wiring::Paths,
-    labels: &HashMap<String, String>,
-) -> HashMap<String, String> {
-    let mut out: HashMap<String, String> = HashMap::new();
-    for a in agents {
-        let session = &a.pane.session;
-        if session.is_empty() || out.contains_key(session) {
-            continue;
-        }
-        let info = tower_wiring::collect(paths, &a.cwd, session, labels);
-        if !info.drives_session(session) {
-            continue;
-        }
-        let mut mark = "⌁".to_string();
-        if let Some(label) = info
-            .discord
-            .as_ref()
-            .and_then(|d| d.channels.first())
-            .and_then(|c| c.label.as_deref())
-            .filter(|l| !l.is_empty())
-        {
-            mark.push_str(label);
-        }
-        out.insert(session.clone(), mark);
-    }
     out
 }

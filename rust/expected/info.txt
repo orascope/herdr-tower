@@ -3,7 +3,6 @@ alpha  [wait]
   folder     ~/proj-alpha
   engine     claude
   herdr      alpha w2:pA
-  Discord    not connected
   launch     manual (no LaunchAgent)
   session    none yet (filled in when a hook fires)
   asking     권한을 승인해 주세요 — 파일 쓰기
@@ -14,7 +13,6 @@ zeta  [idle]
   folder     ~/proj-zeta
   engine     codex
   herdr      zeta w2:pF
-  Discord    not connected
   launch     manual (no LaunchAgent)
   session    none yet (filled in when a hook fires)
   state      IDLE for 2h (updated 2h ago)
@@ -24,7 +22,6 @@ iota  [dead]
   folder     ~/proj-iota
   engine     gemini
   herdr      iota w2:pI
-  Discord    not connected
   launch     manual (no LaunchAgent)
   session    none yet (filled in when a hook fires)
   state      DEAD for 3d (updated 3d ago)
@@ -34,7 +31,6 @@ delta  [working?]
   folder     ~/deeply/nested/worktrees/feat-a-very-long-branch-name-that-will-not-fit-20260911
   engine     claude
   herdr      delta w2:pD
-  Discord    not connected
   launch     manual (no LaunchAgent)
   session    none yet (filled in when a hook fires)
   task       한글 작업 설명이 길면 열 폭을 어떻게 먹는지 확인한다
@@ -45,7 +41,6 @@ eta  [working?]
   folder     ~/проект
   engine     gemini
   herdr      eta w2:pG
-  Discord    not connected
   launch     manual (no LaunchAgent)
   session    none yet (filled in when a hook fires)
   task       mixed 한글 and ASCII 섞임

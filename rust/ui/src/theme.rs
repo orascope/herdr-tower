@@ -21,13 +21,13 @@ pub const SEL_FG: Color = Color::Rgb(0xe4, 0xe4, 0xe4);
 pub const HELP: Color = Color::Rgb(0x6a, 0x6a, 0x6a);
 pub const HELP_KEY: Color = Color::Rgb(0xd0, 0xd0, 0xd0);
 pub const MODEL: Color = Color::Rgb(0xd0, 0xd0, 0xd0);
-pub const DISCORD: Color = Color::Rgb(0x7c, 0x8a, 0xff);
+pub const WAIT: Color = Color::Rgb(0x7c, 0x8a, 0xff);
 
 /// The idle loop, running.
 ///
 /// Rose, because it is the one part of the colour wheel this palette leaves
 /// empty: red 0°, accent 32°, yellow 38°, claude 38°, green 155°, session ID
-/// 180°, codex 194°, preview 211°, discord 233°, gemini 275°. A loop is not a state and not a
+/// 180°, codex 194°, preview 211°, wait 233°, gemini 275°. A loop is not a state and not a
 /// vendor — it is something attached to an agent — so it must not borrow a
 /// colour that already means one of those. It used to wear [`ACCENT`], which
 /// is `DoneUnread`, and its preview line wore [`YELLOW`], which is `Waiting`;
@@ -169,10 +169,6 @@ pub fn loop_badge(paused: bool) -> Style {
     }
 }
 
-pub fn discord() -> Style {
-    Style::default().fg(DISCORD).add_modifier(Modifier::BOLD)
-}
-
 pub fn selected() -> Style {
     Style::default()
         .bg(SEL_BG)
@@ -216,7 +212,7 @@ pub fn level(name: &str) -> Style {
     match name {
         "red" => base.fg(RED).add_modifier(Modifier::BOLD),
         "yellow" => base.fg(YELLOW),
-        "wait" => base.fg(DISCORD),
+        "wait" => base.fg(WAIT),
         "white" => base.fg(WHITE),
         "green" => base.fg(GREEN),
         _ => base.fg(WHITE),
@@ -230,7 +226,7 @@ pub fn level(name: &str) -> Style {
 /// them, and the four states among them (green, yellow, orange, red) take the
 /// warm half of the wheel where claude's brand sits. The old text colours were
 /// ΔE 15 (claude from `ACCENT`, which is `DoneUnread`), 21 (codex from `CYAN`)
-/// and 26 (gemini from `DISCORD`) — a vendor that read as a state. The bar is a
+/// and 26 (gemini from `WAIT`) — a vendor that read as a state. The bar is a
 /// shape no state wears, so the colour beside it says "vendor".
 ///
 /// 🚨 Not a filled chip either. That was tried first (#157): a solid block of
@@ -320,7 +316,7 @@ mod tests {
     #[test]
     fn the_loop_colour_is_not_borrowed_from_a_state_or_a_vendor() {
         let taken = [
-            ACCENT, YELLOW, RED, GREEN, HEADER, DEAD, PREVIEW, DISCORD, WHITE, MODEL, CYAN,
+            ACCENT, YELLOW, RED, GREEN, HEADER, DEAD, PREVIEW, WAIT, WHITE, MODEL, CYAN,
         ];
         for colour in taken {
             assert_ne!(LOOP, colour);
