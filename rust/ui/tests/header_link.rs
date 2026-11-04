@@ -19,7 +19,7 @@ use tower_state::DaemonSnapshot;
 use tower_ui::view::{compose, mark_link, render_lines, screen_lines, REPO_URL};
 use tower_ui::{line_text, Action, Event, Usage, UsageFrame};
 
-const PROJECT: &str = "★ https://github.com/orascope/herdr-tower ↗";
+const PROJECT: &str = "https://github.com/orascope/herdr-tower";
 
 struct OneLine;
 
@@ -222,7 +222,9 @@ fn a_linked_cell_counts_as_its_text_and_a_redraw_repeats_nothing() {
 #[test]
 fn the_project_links_text_holds_its_whole_url() {
     let f = with_usage(140);
-    assert!(line(&f, 140, 1).contains(&format!(" {REPO_URL} ")));
+    assert!(line(&f, 140, 1)
+        .trim_end()
+        .ends_with(&format!(" {REPO_URL}")));
 }
 
 /// A newer release's link points at its own page, not the project's.
