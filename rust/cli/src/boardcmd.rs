@@ -846,28 +846,33 @@ fn label(l: &str) -> Result<String, Failure> {
 
 /// The live agent in pane `id` on this backend, pinned as it is now.
 fn pane_worker(ctx: &Ctx<'_>, id: &str, records: &[Agent]) -> Result<PaneWorker, Failure> {
+    pin_pane(ctx.backend, id, records).map_err(Failure::Refused)
+}
+
+/// The live agent in pane `id` on `backend`, pinned as it is now, or why not.
+pub fn pin_pane(backend: &str, id: &str, records: &[Agent]) -> Result<PaneWorker, String> {
     let live: Vec<&Agent> = records
         .iter()
         .filter(|a| {
-            a.pane.backend == ctx.backend
+            a.pane.backend == backend
                 && a.pane.pane_id == id
                 && a.state != tower_state::AgentState::Dead
         })
         .collect();
     match live.as_slice() {
         [a] => Ok(PaneWorker {
-            backend: ctx.backend.to_string(),
+            backend: backend.to_string(),
             pane_id: id.to_string(),
             agent_id: a.id.clone(),
             session_id: a.session_id.clone(),
             born_at: a.born_at,
         }),
-        [] => Err(Failure::Refused(format!(
+        [] => Err(format!(
             "no agent is running in pane {id} here — label:{id} names a worker the tower cannot see"
-        ))),
-        _ => Err(Failure::Refused(format!(
+        )),
+        _ => Err(format!(
             "more than one agent is recorded in pane {id} — try again in a few seconds"
-        ))),
+        )),
     }
 }
 

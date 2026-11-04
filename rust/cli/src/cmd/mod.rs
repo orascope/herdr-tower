@@ -29,7 +29,7 @@ pub use init::run_init;
 pub use mcp::run_mcp;
 pub use rest::{
     run_all, run_board, run_close, run_daemon, run_doctor, run_host, run_info, run_interrupt,
-    run_loop, run_open, run_report, run_restore, run_resume, run_schedule, run_tree,
+    run_loop, run_open, run_parallax, run_report, run_restore, run_resume, run_schedule, run_tree,
     run_workspaces, run_wt,
 };
 pub use status::run_status;
