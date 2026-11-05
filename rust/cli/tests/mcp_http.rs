@@ -11,11 +11,13 @@
 
 #![cfg(unix)]
 
+use std::io::{BufRead as _, BufReader};
 use std::net::TcpListener;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -74,29 +76,77 @@ fn tower(dir: &Path, args: &[&str]) -> Command {
     c
 }
 
+/// How many ports a server is offered before its test fails.
+const PORT_ATTEMPTS: usize = 5;
+
+/// `mcp serve` on the first port from `ports` it manages to bind, with the
+/// config `config` makes for that port.
+///
+/// Only the server's own "listening" line says it got the port. A successful
+/// connect does not: a port from [`free_port`] is free only until the next test
+/// asks, so another test's server may be the one answering, and the first of the
+/// two to finish takes it away from the other. Nor is it always a server: a child
+/// being spawned by another test holds a copy of `free_port`'s listener until it
+/// execs, and that closed listener takes connections.
+///
+/// A server that lost its port exits, which ends its stderr, and the next port is
+/// tried.
+fn serve_on_first_free(
+    dir: &Path,
+    mut ports: impl FnMut() -> u16,
+    config: impl Fn(u16) -> Value,
+) -> Server {
+    let mut last_said = Vec::new();
+    for _ in 0..PORT_ATTEMPTS {
+        let port = ports();
+        std::fs::write(dir.join("config.json"), config(port).to_string()).unwrap();
+        let mut child = tower(dir, &["mcp", "serve"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("the binary starts");
+        let stderr = child.stderr.take().expect("stderr is piped");
+        let server = Server {
+            child,
+            url: format!("http://127.0.0.1:{port}"),
+        };
+        // This thread reads for as long as the server lives, so that its log
+        // never fills the pipe.
+        let (said, heard) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                let _ = said.send(line);
+            }
+        });
+        // The comma keeps a port from matching a longer one.
+        let ready = format!("listening on {},", server.url);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        last_said.clear();
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match heard.recv_timeout(left) {
+                Ok(line) if line.contains(&ready) => return server,
+                Ok(line) => last_said.push(line),
+                Err(RecvTimeoutError::Disconnected) => break,
+                Err(RecvTimeoutError::Timeout) => {
+                    panic!("the server never listened: {last_said:?}")
+                }
+            }
+        }
+    }
+    panic!("the server exited on each of {PORT_ATTEMPTS} ports, last saying {last_said:?}");
+}
+
 fn start(dir: &Path) -> Server {
-    let port = free_port();
-    std::fs::write(
-        dir.join("config.json"),
-        json!({"mcp": {"listen": format!("127.0.0.1:{port}"), "public_url": BASE}}).to_string(),
-    )
-    .unwrap();
     copy_dir(
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("../expected/fixture"),
         &dir.join("state"),
     );
-    let child = tower(dir, &["mcp", "serve"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("the binary starts");
-    let url = format!("http://127.0.0.1:{port}");
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while std::net::TcpStream::connect(("127.0.0.1", port)).is_err() {
-        assert!(Instant::now() < deadline, "the server never listened");
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    Server { child, url }
+    serve_on_first_free(
+        dir,
+        free_port,
+        |port| json!({"mcp": {"listen": format!("127.0.0.1:{port}"), "public_url": BASE}}),
+    )
 }
 
 fn agent() -> ureq::Agent {
@@ -436,26 +486,11 @@ fn a_client_connects_with_a_pairing_code_and_lists_the_agents() {
 #[test]
 fn serve_without_a_public_url_serves_this_machine() {
     let dir = tempfile::tempdir().unwrap();
-    let port = free_port();
-    std::fs::write(
-        dir.path().join("config.json"),
-        json!({"mcp": {"listen": format!("127.0.0.1:{port}")}}).to_string(),
-    )
-    .unwrap();
-    let child = tower(dir.path(), &["mcp", "serve"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let server = Server {
-        child,
-        url: format!("http://127.0.0.1:{port}"),
-    };
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while std::net::TcpStream::connect(("127.0.0.1", port)).is_err() {
-        assert!(Instant::now() < deadline, "the server never listened");
-        std::thread::sleep(Duration::from_millis(50));
-    }
+    let server = serve_on_first_free(
+        dir.path(),
+        free_port,
+        |port| json!({"mcp": {"listen": format!("127.0.0.1:{port}")}}),
+    );
     let meta: Value = serde_json::from_str(
         &send(
             &agent(),
@@ -468,6 +503,27 @@ fn serve_without_a_public_url_serves_this_machine() {
     )
     .unwrap();
     assert_eq!(meta["issuer"], server.url);
+}
+
+/// The way a test gets past a port someone else took between [`free_port`] and
+/// the bind: the listener here stands in for that someone, and must not be the
+/// one that answers.
+#[test]
+fn a_server_that_loses_its_port_is_started_on_another() {
+    let dir = tempfile::tempdir().unwrap();
+    let taken = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut first = Some(taken.local_addr().unwrap().port());
+    let server = serve_on_first_free(
+        dir.path(),
+        || first.take().unwrap_or_else(free_port),
+        |port| json!({"mcp": {"listen": format!("127.0.0.1:{port}")}}),
+    );
+    assert_ne!(
+        server.url,
+        format!("http://127.0.0.1:{}", taken.local_addr().unwrap().port())
+    );
+    let r = send(&agent(), "GET", &format!("{}/", server.url), &[], None);
+    assert_eq!(r.status, 200, "{}", r.body);
 }
 
 #[test]
