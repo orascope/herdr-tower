@@ -326,7 +326,8 @@
             "claude",
             "codex",
             "gemini",
-            "opencode"
+            "opencode",
+            "kiro"
           ],
           "type": "string"
         },

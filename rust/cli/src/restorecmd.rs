@@ -276,6 +276,8 @@ fn fresh_command(a: &Agent, roots: &ResumePaths) -> String {
         // A bare `opencode` in the folder it died in. Resuming it is
         // `resume_command`'s, which needs the session ID the plugin reports.
         "opencode" => "opencode".into(),
+        // A new conversation: the tower records no Kiro session ID to resume.
+        "kiro" => "kiro-cli".into(),
         _ => String::new(),
     }
 }
