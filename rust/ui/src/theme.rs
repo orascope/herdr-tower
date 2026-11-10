@@ -254,6 +254,9 @@ pub fn provider(key: &str) -> Option<Vendor> {
         // one row per vendor, not one per product name.
         "antigravity" | "gemini" => (Color::Rgb(0x42, 0x85, 0xf4), Color::Rgb(0x7b, 0xaa, 0xf7)),
         "opencode" => (Color::Rgb(0xa7, 0x8b, 0xfa), Color::Rgb(0xc1, 0xae, 0xfc)),
+        // Kiro's purple, pushed toward orchid so it reads apart from
+        // opencode's lavender.
+        "kiro" => (Color::Rgb(0xd1, 0x6e, 0xf5), Color::Rgb(0xe0, 0xa0, 0xf8)),
         _ => return None,
     };
     Some(Vendor { bar, name })
@@ -327,7 +330,14 @@ mod tests {
             assert_ne!(SEP, colour);
             assert_ne!(PANE_TITLE, colour);
         }
-        for vendor in ["claude", "codex", "gemini", "antigravity", "opencode"] {
+        for vendor in [
+            "claude",
+            "codex",
+            "gemini",
+            "antigravity",
+            "opencode",
+            "kiro",
+        ] {
             let v = provider(vendor).expect("a known vendor has a colour");
             for mine in [LOOP, LOOP_PAUSED, SEP, PANE_TITLE] {
                 assert_ne!(v.bar, mine);

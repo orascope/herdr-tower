@@ -847,6 +847,14 @@ pub const KINDS: [Kind; 23] = [
         hooked: false,
         launch: true,
     },
+    // Kiro CLI: launched, and with no hook of ours, so herdr's status is all
+    // its row has.
+    Kind {
+        name: "kiro",
+        herdr: &["kiro"],
+        hooked: false,
+        launch: true,
+    },
     // Every other agent herdr 0.9.5 recognizes, by the name it reports. A
     // pane herdr called an agent used to get no row at all unless it was one
     // of the four above, so a Kiro session was simply missing from the list.
@@ -860,7 +868,6 @@ pub const KINDS: [Kind; 23] = [
     listed("hermes", &["hermes"]),
     listed("kilo", &["kilo"]),
     listed("kimi", &["kimi"]),
-    listed("kiro", &["kiro"]),
     listed("letta", &["letta"]),
     listed("maki", &["maki"]),
     // Shortened to fit the AGENT column, which is as wide as `opencode`.
@@ -873,7 +880,7 @@ pub const KINDS: [Kind; 23] = [
 ];
 
 /// How many of [`KINDS`] the tower launches.
-pub const LAUNCHED: usize = 4;
+pub const LAUNCHED: usize = 5;
 
 /// The kinds the tower launches ([`Kind::launch`]), in [`KINDS`]' order.
 pub const LAUNCH_KINDS: [&str; LAUNCHED] = {
@@ -1154,12 +1161,15 @@ mod kind_rank_tests {
 mod launch_kind_tests {
     use super::*;
 
-    /// The launched kinds are the four with a known command line, in list
+    /// The launched kinds are the five with a known command line, in list
     /// order; a kind that is only listed has no hook either, since a hook is
     /// something `init` installs for a CLI the tower knows how to run.
     #[test]
-    fn the_launched_kinds_are_the_four_the_tower_can_start() {
-        assert_eq!(LAUNCH_KINDS, ["claude", "codex", "gemini", "opencode"]);
+    fn the_launched_kinds_are_the_ones_the_tower_can_start() {
+        assert_eq!(
+            LAUNCH_KINDS,
+            ["claude", "codex", "gemini", "opencode", "kiro"]
+        );
         for k in KINDS {
             assert_eq!(LAUNCH_KINDS.contains(&k.name), k.launch, "{}", k.name);
             assert!(
@@ -1170,14 +1180,14 @@ mod launch_kind_tests {
         }
     }
 
-    /// A Kiro pane is a row: listed and reached by broadcasts, not launched.
+    /// A Cursor pane is a row: listed and reached by broadcasts, not launched.
     #[test]
     fn a_listed_only_kind_is_supervised_and_not_launched() {
-        for kind in ["kiro", "cursor", "amp", "mastra"] {
+        for kind in ["cursor", "amp", "mastra"] {
             assert!(SUPERVISED_KINDS.contains(&kind), "{kind}");
             assert!(!LAUNCH_KINDS.contains(&kind), "{kind}");
             assert!(!has_hook(kind), "{kind}");
-            assert!(kind_rank(kind) > kind_rank("opencode"), "{kind}");
+            assert!(kind_rank(kind) > kind_rank("kiro"), "{kind}");
             assert!(kind_rank(kind) < kind_rank("aider"), "{kind}");
         }
     }

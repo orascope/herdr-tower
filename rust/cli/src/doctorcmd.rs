@@ -369,7 +369,8 @@ pub fn last_hooks(agents: &[Agent], now: OffsetDateTime) -> Vec<String> {
                     live.len()
                 ),
                 // A kind the tower only lists has no hook to have lost.
-                None if !tower_state::LAUNCH_KINDS.contains(kind) => {
+                // opencode's plugin is one it can be missing.
+                None if !tower_state::has_hook(kind) && *kind != "opencode" => {
                     format!("{kind}: {} live, herdr's status only", live.len())
                 }
                 None => format!("{kind}: {} live, no hook ever", live.len()),

@@ -35,10 +35,11 @@ pub const AGENTS: [&str; tower_state::LAUNCHED] = tower_state::LAUNCH_KINDS;
 /// this is the one part of the decision worth testing without a real home
 /// directory.
 pub fn command_for(agent: &str, gemini_dir: &Path) -> String {
-    let base = if agent == "gemini" {
-        gemini_base(gemini_dir)
-    } else {
-        agent
+    let base = match agent {
+        "gemini" => gemini_base(gemini_dir),
+        // herdr's name for the kind is `kiro`; the binary is `kiro-cli`.
+        "kiro" => "kiro-cli",
+        _ => agent,
     };
     with_auto_approve(base)
 }
@@ -58,6 +59,10 @@ fn approve_flags(bin: &str) -> Option<&'static str> {
         "claude" => Some("--dangerously-skip-permissions"),
         "codex" => Some("-s danger-full-access -a never"),
         "opencode" => Some("--auto"),
+        // Kiro takes these on its `chat` subcommand, not on the binary
+        // (kiro-cli 3.1.0). `--trust-workspace` answers "Trust this
+        // workspace?" for the launch, which a new worktree always asks.
+        "kiro-cli" => Some("chat --trust-all-tools --trust-workspace"),
         "agy" => Some("--dangerously-skip-permissions"),
         "gemini" => Some("--yolo"),
         _ => None,
@@ -1260,6 +1265,20 @@ mod tests {
         assert_eq!(agent_kind("opencode", "opencode"), "opencode");
     }
 
+    /// Kiro is started by its binary's name and known to herdr by its kind's;
+    /// a second pass over the command adds nothing, and herdr is handed the
+    /// subcommand and flags as the agent's arguments.
+    #[test]
+    fn a_kiro_launch_names_kiro_to_herdr_and_passes_chat_with_its_flags() {
+        let no_home = tempfile::tempdir().unwrap();
+        let command = command_for("kiro", no_home.path());
+        assert_eq!(with_auto_approve(&command), command);
+        let (bin, args) = split_command(&command);
+        assert_eq!(agent_kind("kiro", bin), "kiro");
+        assert_eq!(args, ["chat", "--trust-all-tools", "--trust-workspace"]);
+        assert!(AGENTS.contains(&"kiro"));
+    }
+
     /// Every kind starts without approval prompts, always — each with its own
     /// CLI's spelling. There is no setting that launches one bare.
     #[test]
@@ -1269,6 +1288,7 @@ mod tests {
             ("claude", "claude --dangerously-skip-permissions"),
             ("codex", "codex -s danger-full-access -a never"),
             ("opencode", "opencode --auto"),
+            ("kiro", "kiro-cli chat --trust-all-tools --trust-workspace"),
             ("gemini", "gemini --yolo"),
         ] {
             assert_eq!(command_for(kind, no_home.path()), want, "{kind}");
