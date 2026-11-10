@@ -802,21 +802,21 @@ pub struct Kind {
     /// described by the backend alone, so its record can go quiet without any
     /// hook having been lost.
     pub hooked: bool,
-    /// Whether the tower starts one: `wt new`, `open`, and a fresh pane on
-    /// `restore`. That takes knowing its command line and the flags that keep
-    /// it from asking before each tool, which the tower knows for these only.
-    /// The rest are listed and reached, not launched.
-    pub launch: bool,
+    /// Whether the tower starts one that never stops to ask: it knows the
+    /// flags that keep this CLI from asking before each tool, read from the
+    /// CLI itself. The rest are started bare, through herdr, and may ask.
+    pub unattended: bool,
 }
 
-/// A kind herdr recognizes and the tower only lists: no hook of ours and no
-/// launch, so its row is herdr's own reading of the pane.
+/// A kind herdr recognizes and the tower knows nothing more about: no hook
+/// of ours, so its row is herdr's own reading of the pane, and no
+/// auto-approve flags, so one the tower starts may stop to ask.
 const fn listed(name: &'static str, herdr: &'static [&'static str]) -> Kind {
     Kind {
         name,
         herdr,
         hooked: false,
-        launch: false,
+        unattended: false,
     }
 }
 
@@ -827,25 +827,25 @@ pub const KINDS: [Kind; 23] = [
         name: "claude",
         herdr: &["claude"],
         hooked: true,
-        launch: true,
+        unattended: true,
     },
     Kind {
         name: "codex",
         herdr: &["codex"],
         hooked: true,
-        launch: true,
+        unattended: true,
     },
     Kind {
         name: "gemini",
         herdr: &["gemini", "agy"],
         hooked: true,
-        launch: true,
+        unattended: true,
     },
     Kind {
         name: "opencode",
         herdr: &["opencode"],
         hooked: false,
-        launch: true,
+        unattended: true,
     },
     // Kiro CLI: launched, and with no hook of ours, so herdr's status is all
     // its row has.
@@ -853,7 +853,7 @@ pub const KINDS: [Kind; 23] = [
         name: "kiro",
         herdr: &["kiro"],
         hooked: false,
-        launch: true,
+        unattended: true,
     },
     // Every other agent herdr 0.9.5 recognizes, by the name it reports. A
     // pane herdr called an agent used to get no row at all unless it was one
@@ -879,21 +879,22 @@ pub const KINDS: [Kind; 23] = [
     listed("qwen", &["qwen"]),
 ];
 
-/// How many of [`KINDS`] the tower launches.
-pub const LAUNCHED: usize = 5;
+/// How many of [`KINDS`] the tower starts without approval prompts.
+pub const UNATTENDED: usize = 5;
 
-/// The kinds the tower launches ([`Kind::launch`]), in [`KINDS`]' order.
-pub const LAUNCH_KINDS: [&str; LAUNCHED] = {
-    let mut names = [""; LAUNCHED];
+/// The kinds the tower starts without approval prompts
+/// ([`Kind::unattended`]), in [`KINDS`]' order.
+pub const UNATTENDED_KINDS: [&str; UNATTENDED] = {
+    let mut names = [""; UNATTENDED];
     let (mut i, mut n) = (0, 0);
     while i < KINDS.len() {
-        if KINDS[i].launch {
+        if KINDS[i].unattended {
             names[n] = KINDS[i].name;
             n += 1;
         }
         i += 1;
     }
-    assert!(n == LAUNCHED);
+    assert!(n == UNATTENDED);
     names
 };
 
@@ -914,6 +915,13 @@ pub const SUPERVISED_KINDS: [&str; KINDS.len()] = {
 /// supervise.
 pub fn kind_spec(name: &str) -> Option<&'static Kind> {
     KINDS.iter().find(|k| k.name == name)
+}
+
+/// The name herdr starts and reports this kind by: the first of
+/// [`Kind::herdr`], so `mastracode` for `mastra`. `None` for a kind the tower
+/// does not supervise.
+pub fn herdr_name(kind_name: &str) -> Option<&'static str> {
+    kind_spec(kind_name).and_then(|k| k.herdr.first().copied())
 }
 
 /// The kind the tower supervises a pane as, from the agent name herdr reports.
@@ -1103,6 +1111,13 @@ mod kind_rank_tests {
         assert_eq!(kind_from_herdr("mastracode"), Some("mastra"));
         assert_eq!(kind_from_herdr("aider"), None);
         assert_eq!(kind_spec("agy"), None, "agy is a herdr name, not a kind");
+        // What herdr is asked to start is a name it reports back as that kind.
+        for k in KINDS {
+            let herdr = herdr_name(k.name).expect("a kind has a herdr name");
+            assert_eq!(kind_from_herdr(herdr), Some(k.name));
+        }
+        assert_eq!(herdr_name("mastra"), Some("mastracode"));
+        assert_eq!(herdr_name("aider"), None);
     }
 
     /// The three kind helpers answer about one set. A hooked kind that is not
@@ -1158,34 +1173,40 @@ mod kind_rank_tests {
 }
 
 #[cfg(test)]
-mod launch_kind_tests {
+mod unattended_kind_tests {
     use super::*;
 
-    /// The launched kinds are the five with a known command line, in list
-    /// order; a kind that is only listed has no hook either, since a hook is
-    /// something `init` installs for a CLI the tower knows how to run.
+    /// The unattended kinds are the five whose flags the tower knows, in
+    /// list order; a kind without them has no hook either, since a hook is
+    /// something `init` installs for a CLI the tower knows that well.
     #[test]
-    fn the_launched_kinds_are_the_ones_the_tower_can_start() {
+    fn the_unattended_kinds_are_the_ones_whose_flags_are_known() {
         assert_eq!(
-            LAUNCH_KINDS,
+            UNATTENDED_KINDS,
             ["claude", "codex", "gemini", "opencode", "kiro"]
         );
         for k in KINDS {
-            assert_eq!(LAUNCH_KINDS.contains(&k.name), k.launch, "{}", k.name);
+            assert_eq!(
+                UNATTENDED_KINDS.contains(&k.name),
+                k.unattended,
+                "{}",
+                k.name
+            );
             assert!(
-                k.launch || !k.hooked,
-                "{} is hooked but not launched",
+                k.unattended || !k.hooked,
+                "{} is hooked but not unattended",
                 k.name
             );
         }
     }
 
-    /// A Cursor pane is a row: listed and reached by broadcasts, not launched.
+    /// A Cursor pane is a row, reached by broadcasts; the tower knows no
+    /// flags for it.
     #[test]
-    fn a_listed_only_kind_is_supervised_and_not_launched() {
+    fn a_kind_herdr_alone_describes_is_supervised_and_not_unattended() {
         for kind in ["cursor", "amp", "mastra"] {
             assert!(SUPERVISED_KINDS.contains(&kind), "{kind}");
-            assert!(!LAUNCH_KINDS.contains(&kind), "{kind}");
+            assert!(!UNATTENDED_KINDS.contains(&kind), "{kind}");
             assert!(!has_hook(kind), "{kind}");
             assert!(kind_rank(kind) > kind_rank("kiro"), "{kind}");
             assert!(kind_rank(kind) < kind_rank("aider"), "{kind}");

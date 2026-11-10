@@ -471,7 +471,7 @@ pub const TOOLS: &[Tool] = &[
             json!({
                 "name": "open_agent",
                 "title": "Open a new agent",
-                "description": "Opens a new herdr tab in a folder on the user's Mac and starts a coding agent in it (claude unless asked otherwise), optionally typing a first message once it is up. No worktree or branch is made. The agent runs with full permissions, so open one only when the user asked for it, in the folder they named. Returns the new agent's id; list_agents, read_agent, send_prompt and wait_agent know it within a few seconds.",
+                "description": "Opens a new herdr tab in a folder on the user's Mac and starts a coding agent in it (claude unless asked otherwise), optionally typing a first message once it is up. No worktree or branch is made. The agent runs with full permissions where the tower knows how to grant them, so open one only when the user asked for it, in the folder they named. Returns the new agent's id; list_agents, read_agent, send_prompt and wait_agent know it within a few seconds.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -483,7 +483,7 @@ pub const TOOLS: &[Tool] = &[
                         "agent": {
                             "type": "string",
                             "enum": tower_wt::AGENTS,
-                            "description": "Which agent to start. claude when left out."
+                            "description": "Which agent to start. claude when left out. claude, codex, gemini, opencode and kiro run without approval prompts; any other kind is started as it is and may stop to ask."
                         },
                         "workspace": {
                             "type": "string",
@@ -1802,7 +1802,10 @@ fn open_agent(src: &dyn Source, c: &Call, args: &Args) -> Output {
     } else {
         format!(" (workspace {})", x.workspace)
     };
-    let head = format!("Opened {} in {}{where_}.", x.id, x.dir);
+    let mut head = format!("Opened {} in {}{where_}.", x.id, x.dir);
+    if tower_wt::may_ask(&x.kind) {
+        head.push_str(" This kind is started without auto-approve flags, so it may stop to ask before a tool: it then lists as WAITING, and answer_prompt answers it.");
+    }
     match &x.prompt {
         Prompted::Nothing => Ok(head),
         Prompted::Delivered => Ok(format!("{head} The prompt was sent.")),

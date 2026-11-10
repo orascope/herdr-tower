@@ -316,18 +316,36 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Opens a new herdr tab in a folder on the user's Mac and starts a coding agent in it (claude unless asked otherwise), optionally typing a first message once it is up. No worktree or branch is made. The agent runs with full permissions, so open one only when the user asked for it, in the folder they named. Returns the new agent's id; list_agents, read_agent, send_prompt and wait_agent know it within a few seconds.",
+    "description": "Opens a new herdr tab in a folder on the user's Mac and starts a coding agent in it (claude unless asked otherwise), optionally typing a first message once it is up. No worktree or branch is made. The agent runs with full permissions where the tower knows how to grant them, so open one only when the user asked for it, in the folder they named. Returns the new agent's id; list_agents, read_agent, send_prompt and wait_agent know it within a few seconds.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "agent": {
-          "description": "Which agent to start. claude when left out.",
+          "description": "Which agent to start. claude when left out. claude, codex, gemini, opencode and kiro run without approval prompts; any other kind is started as it is and may stop to ask.",
           "enum": [
             "claude",
             "codex",
             "gemini",
             "opencode",
-            "kiro"
+            "kiro",
+            "amp",
+            "cline",
+            "copilot",
+            "cursor",
+            "devin",
+            "droid",
+            "grok",
+            "hermes",
+            "kilo",
+            "kimi",
+            "letta",
+            "maki",
+            "mastra",
+            "muse",
+            "omp",
+            "pi",
+            "qodercli",
+            "qwen"
           ],
           "type": "string"
         },

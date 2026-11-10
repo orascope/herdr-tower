@@ -105,6 +105,9 @@ pub fn run_wt<W: Write + Send>(
                 m.agent,
                 m.task
             )?;
+            if let Some(note) = tower_wt::may_ask_note(&m.agent) {
+                writeln!(w, "  approvals: {note}")?;
+            }
             Ok(())
         }
 

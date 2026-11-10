@@ -2,7 +2,7 @@
 
 [← README](../README.md)
 
-Lets several agents — claude, codex, gemini, opencode and kiro in any mix — work in one
+Lets several agents — claude, codex, gemini, opencode, kiro, or any other agent herdr can start, in any mix — work in one
 repository in parallel without treading on each other's files. A single command
 gets a worktree, an `agent/<task>` branch, a herdr tab and a started agent, and
 the backend does all four.
@@ -21,14 +21,18 @@ herdr-tower wt merge auth-api                    # summarise the checks, show th
 herdr-tower wt clean auth-api                    # tidy up, keeping anything unsafe
 ```
 
-- **No agent stops to ask** — every agent the tower starts (`wt new`, `open`
+- **No agent stops to ask** — every claude, codex, gemini, opencode and kiro
+  agent the tower starts (`wt new`, `open`
   and the remote MCP `open_agent`, `restore`, `resume`) runs without approval
   prompts: claude `--dangerously-skip-permissions`, codex
   `-s danger-full-access -a never`, opencode `--auto`, kiro
   `chat --trust-all-tools --trust-workspace`, agy
   `--dangerously-skip-permissions`, stock gemini `--yolo`. Always — there is no
   setting to turn it off (`worker_auto_approve` was retired; an old value in
-  `config.json` is ignored)
+  `config.json` is ignored). Any other kind (cursor, amp, copilot, …) is
+  started as it is, because the tower has not read that CLI's flags: it may
+  ask, the launch says so (`approvals: may ask`), and it lists as waiting
+  when it does
 - **Nothing merges itself** — a merge is always explained and always confirmed
 - **Cleaning keeps what is unsafe** — one uncommitted file, one untracked file or
   one unmerged commit and `clean` refuses

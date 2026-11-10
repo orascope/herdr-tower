@@ -281,7 +281,7 @@ track of "finished, unseen" is the reason this tool exists.
 | Gemini (agy) | hooks in `~/.gemini/config/hooks.json` (PreInvocation, PostToolUse, Stop) | active, done |
 | opencode | the plugin `~/.config/opencode/plugins/herdr-tower.js` (chat.message, permission.asked, question.asked, their replies, session.idle, session.error except a user abort, and each finished step's token count); without it, herdr's own lifecycle status only — no task or question text | active, wait, done, err, idle |
 | Kiro | none of ours: herdr's own lifecycle status for the pane. Launched by `wt new` and `open` like the four above | working, blocked, done, idle as herdr reports them |
-| Cursor, Amp, Copilot, Cline, Devin, Droid, Grok, Hermes, Kilo, Kimi, Letta, Maki, Mastra, Muse, omp, pi, Qoder, Qwen | none of ours: herdr's own lifecycle status for the pane. Listed and reached by broadcasts; not launched by `wt new` or `open` | working, blocked, done, idle as herdr reports them |
+| Cursor, Amp, Copilot, Cline, Devin, Droid, Grok, Hermes, Kilo, Kimi, Letta, Maki, Mastra, Muse, omp, pi, Qoder, Qwen | none of ours: herdr's own lifecycle status for the pane. Listed, reached by broadcasts, and launched by `wt new` and `open` without auto-approve flags, so one may stop to ask | working, blocked, done, idle as herdr reports them |
 
 One `herdr-tower init` sets all of it up at once — existing settings kept, backed
 up, and idempotent: the resident supervisor, every hook above (the opencode plugin included), and the `orchestration`

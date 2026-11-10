@@ -14,19 +14,33 @@ use crate::git;
 use crate::meta::{delete_meta, load_meta, reserve_meta, Meta};
 use crate::{Error, Result};
 
-/// The agent kinds `wt new` will launch: the supervised kinds the tower has a
-/// command line for. The others herdr recognizes are listed, not launched.
+/// The agent kinds `wt new` will launch: every kind the tower supervises.
 ///
-/// A list of names rather than a map from kind to command: the command equals
-/// the kind for all but gemini, whose real command is decided at launch by
-/// [`command_for`]. What is left to do here is validating the `--agent` flag,
-/// so that is all this is. herdr starts each of them by kind — opencode
-/// included.
-pub const AGENTS: [&str; tower_state::LAUNCHED] = tower_state::LAUNCH_KINDS;
+/// A list of names rather than a map from kind to command: herdr starts each
+/// of them by kind and picks the executable itself, so what is left to do here
+/// is validating the `--agent` flag. [`command_for`] adds the auto-approve
+/// flags for the kinds it knows them for; [`may_ask`] says which it does not.
+pub const AGENTS: [&str; tower_state::SUPERVISED_KINDS.len()] = tower_state::SUPERVISED_KINDS;
 
-/// The launch command for an agent kind, always with its auto-approve flags.
+/// Whether a kind the tower starts may stop to ask before a tool: it is
+/// started bare, because the tower has not read this CLI's auto-approve flags
+/// from the CLI itself. A guessed flag is worse than none — a wrong one is a
+/// pane that does not start at all.
+pub fn may_ask(kind: &str) -> bool {
+    !tower_state::UNATTENDED_KINDS.contains(&kind)
+}
+
+/// The line `wt new` and `open` add for a kind that [`may_ask`].
+pub fn may_ask_note(kind: &str) -> Option<String> {
+    may_ask(kind).then(|| {
+        format!("may ask — herdr-tower knows no auto-approve flags for {kind}; it shows as waiting when it does")
+    })
+}
+
+/// The launch command for an agent kind, with its auto-approve flags when the
+/// tower knows them ([`may_ask`] is false).
 ///
-/// Always: every agent the tower starts runs without approval prompts, with no
+/// Always, for those: such an agent runs without approval prompts, with no
 /// setting to turn that off (2026-10-02). The `worker_auto_approve` switch that
 /// used to sit here let a pane come up asking before each tool, which is the
 /// one thing a pane started from the tower must not do.
@@ -328,11 +342,14 @@ pub fn split_command(command: &str) -> (&str, Vec<&str>) {
 ///
 /// herdr-tower folds agy into gemini for supervision; herdr recognizes them
 /// separately. When there is a real binary name it is the more precise answer.
+///
+/// Otherwise herdr's own name for the kind, which is the kind's except where
+/// the tower shortened it (`mastra` is herdr's `mastracode`).
 pub fn agent_kind<'a>(kind: &'a str, bin: &str) -> &'a str {
     if bin == "agy" {
         "agy"
     } else {
-        kind
+        tower_state::herdr_name(kind).unwrap_or(kind)
     }
 }
 
@@ -1279,7 +1296,26 @@ mod tests {
         assert!(AGENTS.contains(&"kiro"));
     }
 
-    /// Every kind starts without approval prompts, always — each with its own
+    /// Every supervised kind can be launched. One whose flags the tower has
+    /// not read is started bare, by the name herdr knows it by, and says so.
+    #[test]
+    fn a_kind_with_no_known_flags_is_launched_bare_and_says_it_may_ask() {
+        let no_home = tempfile::tempdir().unwrap();
+        for kind in AGENTS {
+            let command = command_for(kind, no_home.path());
+            let (bin, args) = split_command(&command);
+            assert_eq!(args.is_empty(), may_ask(kind), "{kind}: {command}");
+            assert_eq!(may_ask_note(kind).is_some(), may_ask(kind), "{kind}");
+            let herdr = agent_kind(kind, bin);
+            assert_eq!(tower_state::kind_from_herdr(herdr), Some(kind), "{kind}");
+        }
+        assert_eq!(command_for("cursor", no_home.path()), "cursor");
+        assert_eq!(agent_kind("mastra", "mastra"), "mastracode");
+        assert!(may_ask_note("cursor").unwrap().contains("cursor"));
+        assert!(!may_ask("claude") && !may_ask("kiro"));
+    }
+
+    /// Every unattended kind starts without approval prompts, always — each with its own
     /// CLI's spelling. There is no setting that launches one bare.
     #[test]
     fn auto_approve_gives_every_kind_its_own_flags() {

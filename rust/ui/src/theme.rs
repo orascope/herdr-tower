@@ -381,12 +381,12 @@ mod tests {
         for kind in tower_state::SUPERVISED_KINDS {
             assert_eq!(
                 provider(kind).is_some(),
-                tower_state::LAUNCH_KINDS.contains(&kind),
+                tower_state::UNATTENDED_KINDS.contains(&kind),
                 "{kind}"
             );
         }
         let mut seen: Vec<Color> = Vec::new();
-        for kind in tower_state::LAUNCH_KINDS {
+        for kind in tower_state::UNATTENDED_KINDS {
             let v = provider(kind).unwrap_or_else(|| panic!("{kind} has no mark"));
             assert!(!seen.contains(&v.bar), "{kind} shares a bar colour");
             seen.push(v.bar);
@@ -421,7 +421,7 @@ mod tests {
     /// the louder one.
     #[test]
     fn a_vendor_is_readable_on_the_selection_bar() {
-        for kind in tower_state::LAUNCH_KINDS {
+        for kind in tower_state::UNATTENDED_KINDS {
             let v = provider(kind).unwrap();
             let name = contrast(v.name, SEL_BG);
             let bar = contrast(v.bar, SEL_BG);
@@ -434,7 +434,7 @@ mod tests {
     /// The escape-drawn screens get the very colours the tower draws with.
     #[test]
     fn the_rgb_pair_is_the_vendors_own_colours() {
-        for kind in tower_state::LAUNCH_KINDS {
+        for kind in tower_state::UNATTENDED_KINDS {
             let v = provider(kind).unwrap();
             let [(br, bg, bb), (nr, ng, nb)] = vendor_rgb(kind).unwrap();
             assert_eq!(v.bar, Color::Rgb(br, bg, bb), "{kind}");

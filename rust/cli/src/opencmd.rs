@@ -294,6 +294,9 @@ pub fn describe(o: &Opened) -> String {
         Prompted::StillGoing => out.push_str("  prompt:    sent; still going\n"),
         Prompted::Failed(e) => out.push_str(&format!("  prompt:    not sent — {e}\n")),
     }
+    if let Some(note) = tower_wt::may_ask_note(&o.kind) {
+        out.push_str(&format!("  approvals: {note}\n"));
+    }
     out
 }
 
