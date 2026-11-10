@@ -2962,7 +2962,7 @@ mod tests {
             assert_eq!(text_width(&name.content), W_KIND, "{kind}");
             assert!(name.content.starts_with(kind), "{kind}");
         }
-        for kind in tower_state::SUPERVISED_KINDS {
+        for kind in tower_state::LAUNCH_KINDS {
             let [bar, name] = kind_cell(kind);
             let v = theme::provider(kind).unwrap();
             assert_eq!(bar.style.fg, Some(v.bar), "{kind}");

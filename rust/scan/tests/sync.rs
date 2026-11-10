@@ -98,7 +98,36 @@ fn kind_folds_backend_names() {
 #[test]
 fn the_fold_produces_exactly_the_supervised_kinds() {
     let backend_names = [
-        "claude", "codex", "gemini", "agy", "opencode", "aider", "node", "", "CLAUDE", "claude ",
+        "claude",
+        "codex",
+        "gemini",
+        "agy",
+        "opencode",
+        "amp",
+        "cline",
+        "copilot",
+        "cursor",
+        "devin",
+        "droid",
+        "grok",
+        "hermes",
+        "kilo",
+        "kimi",
+        "kiro",
+        "letta",
+        "maki",
+        "mastracode",
+        "muse",
+        "omp",
+        "pi",
+        "qodercli",
+        "qwen",
+        "aider",
+        "node",
+        "",
+        "CLAUDE",
+        "claude ",
+        "kiro-cli",
     ];
     let mut produced: Vec<&str> = backend_names.iter().filter_map(|n| kind(Some(n))).collect();
     for k in &produced {

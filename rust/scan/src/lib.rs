@@ -45,7 +45,9 @@ pub const TURN_START_GRACE: Duration = Duration::seconds(10);
 /// leaves nothing to infer — agy is the Antigravity CLI, supervised as gemini.
 ///
 /// A kind listed here is one the tower keeps a row for, hook or no hook —
-/// `opencode` has none, so the backend's status is all it gets.
+/// `opencode` without its plugin has none, and neither does any of the agents
+/// the tower only lists (`kiro`, `cursor`, …), so the backend's status is all
+/// those get.
 pub fn kind(agent: Option<&str>) -> Option<&'static str> {
     tower_state::kind_from_herdr(agent?)
 }

@@ -14,14 +14,15 @@ use crate::git;
 use crate::meta::{delete_meta, load_meta, reserve_meta, Meta};
 use crate::{Error, Result};
 
-/// The agent kinds `wt new` will launch: every kind the tower supervises.
+/// The agent kinds `wt new` will launch: the supervised kinds the tower has a
+/// command line for. The others herdr recognizes are listed, not launched.
 ///
 /// A list of names rather than a map from kind to command: the command equals
 /// the kind for all but gemini, whose real command is decided at launch by
 /// [`command_for`]. What is left to do here is validating the `--agent` flag,
 /// so that is all this is. herdr starts each of them by kind — opencode
-/// included — so a kind the tower can supervise is one it can launch.
-pub const AGENTS: [&str; tower_state::SUPERVISED_KINDS.len()] = tower_state::SUPERVISED_KINDS;
+/// included.
+pub const AGENTS: [&str; tower_state::LAUNCHED] = tower_state::LAUNCH_KINDS;
 
 /// The launch command for an agent kind, always with its auto-approve flags.
 ///

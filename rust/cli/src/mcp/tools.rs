@@ -220,7 +220,7 @@ pub const TOOLS: &[Tool] = &[
             json!({
                 "name": "list_agents",
                 "title": "List agents",
-                "description": "Every coding agent (claude, codex, gemini, opencode) running in herdr on the user's Mac, across all herdr sessions, with its state. WAITING means it is blocked on the user (a question or an approval); DONE_UNREAD means it finished a turn nobody has looked at yet. Waiting agents come first.",
+                "description": "Every coding agent (claude, codex, gemini, opencode, and any other herdr recognizes, such as kiro or cursor) running in herdr on the user's Mac, across all herdr sessions, with its state. WAITING means it is blocked on the user (a question or an approval); DONE_UNREAD means it finished a turn nobody has looked at yet. Waiting agents come first.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
