@@ -45,8 +45,8 @@ pub use git::{
     head, merge, remove_worktree, repo_root, unmerged,
 };
 pub use lifecycle::{
-    agent_kind, agent_name, clean, command_for, gemini_dir, merge_guide, new_task, split_command,
-    with_auto_approve, NewOptions, AGENTS,
+    agent_kind, agent_name, clean, command_for, gemini_dir, may_ask, may_ask_note, merge_guide,
+    new_task, split_command, with_auto_approve, NewOptions, AGENTS,
 };
 pub use meta::{
     delete_meta, list_metas, live_branches, load_meta, reserve_meta, save_meta, Meta, Parent,
