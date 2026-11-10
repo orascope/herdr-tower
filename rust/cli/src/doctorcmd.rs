@@ -368,6 +368,10 @@ pub fn last_hooks(agents: &[Agent], now: OffsetDateTime) -> Vec<String> {
                     "{kind}: {} live, no hook ever — codex runs a hook only once trusted: /hooks, then t",
                     live.len()
                 ),
+                // A kind the tower only lists has no hook to have lost.
+                None if !tower_state::LAUNCH_KINDS.contains(kind) => {
+                    format!("{kind}: {} live, herdr's status only", live.len())
+                }
                 None => format!("{kind}: {} live, no hook ever", live.len()),
             })
         })
@@ -634,6 +638,22 @@ mod tests {
             [
                 "claude: 1 live, last hook 3m ago",
                 "codex: 1 live, no hook ever — codex runs a hook only once trusted: /hooks, then t"
+            ]
+        );
+    }
+
+    /// A kind the tower only lists has no hook of ours, so a live Kiro row
+    /// is not reported as one whose hooks never arrived.
+    #[test]
+    fn a_listed_only_kind_is_not_reported_as_missing_its_hook() {
+        let now = OffsetDateTime::UNIX_EPOCH + time::Duration::days(20_000);
+        let kiro = Agent::new("kiro-1", "kiro", now);
+        let opencode = Agent::new("opencode-1", "opencode", now);
+        assert_eq!(
+            last_hooks(&[kiro, opencode], now),
+            [
+                "opencode: 1 live, no hook ever",
+                "kiro: 1 live, herdr's status only"
             ]
         );
     }
