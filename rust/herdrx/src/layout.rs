@@ -15,7 +15,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::{deadline_for, AgentStatus, Error, Herdr, Pane, Result, Workspace};
+use crate::{deadline_for, AgentStatus, ApiError, Error, Herdr, Pane, Result, Workspace};
 
 /// One herdr tab — the seat a control tower gives to a "window".
 #[derive(Debug, Clone, Deserialize)]
@@ -368,6 +368,9 @@ pub struct TabOptions {
 /// timeout unset still gets a socket deadline covering the startup wait.
 const DEFAULT_START_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// How often a pane is asked whether its agent has come up.
+const START_POLL: Duration = Duration::from_millis(250);
+
 /// Configures starting an agent.
 #[derive(Debug, Clone, Default)]
 pub struct StartOptions {
@@ -682,17 +685,48 @@ impl Herdr {
         if let Some(t) = opts.timeout {
             params.insert("timeout_ms".into(), json!(t.as_millis() as u64));
         }
-        // agent.start answers only once herdr has seen the agent come up, which
-        // defaults to 30s and can be set as high as 300s — far past the
-        // socket's ordinary deadline.
         let wait = opts.timeout.unwrap_or(DEFAULT_START_TIMEOUT);
-        self.client
-            .call_within::<_, serde_json::Value>(
-                deadline_for(wait),
-                "agent.start",
-                serde_json::Value::Object(params),
-            )
-            .map(|_| ())
+        let started: serde_json::Value = self.client.call_within(
+            deadline_for(wait),
+            "agent.start",
+            serde_json::Value::Object(params),
+        )?;
+        // herdr 0.9.5 answers as soon as it has typed the command, with
+        // `launch_pending` on a pane it has not yet seen an agent in: the wait
+        // for the agent is the `herdr agent start` CLI's own, not the socket's.
+        // Taking that answer for a start reported `opened` for a CLI that was
+        // not installed, over a shell saying `command not found` (measured
+        // 2026-11-11). So the pane is watched here until an agent is in it.
+        let pending = &started["agent"];
+        if pending["launch_pending"] != json!(true) || pending["agent"].is_string() {
+            return Ok(());
+        }
+        let command = started["argv"][0].as_str().unwrap_or(&opts.kind);
+        self.await_agent(&opts.pane_id, command, wait)
+    }
+
+    /// Waits for herdr to see an agent in `pane_id`, up to `wait`.
+    ///
+    /// Seen, not ready: a CLI that came up and stopped at a question of its own
+    /// (a login, a trust dialog) did start, and is listed as waiting. What ends
+    /// in `timeout` is a pane that is still a shell.
+    fn await_agent(&self, pane_id: &str, command: &str, wait: Duration) -> Result<()> {
+        let give_up = std::time::Instant::now() + wait;
+        loop {
+            if self.pane(pane_id)?.agent.is_some() {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= give_up {
+                return Err(Error::Api(ApiError {
+                    code: "timeout".into(),
+                    message: format!(
+                        "no agent came up in {pane_id} within {}s of typing `{command}` — is it installed?",
+                        wait.as_secs()
+                    ),
+                }));
+            }
+            std::thread::sleep(START_POLL);
+        }
     }
 
     /// Blocks until the agent settles into one of `until`.
