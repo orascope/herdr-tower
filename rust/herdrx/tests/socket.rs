@@ -774,6 +774,78 @@ fn starting_an_agent_needs_a_name_a_kind_and_a_pane() {
     assert!(f.methods().is_empty(), "an incomplete request went out");
 }
 
+/// herdr's answer to `agent.start` for a pane it has typed the command into
+/// and not yet seen an agent in.
+const PENDING: &str = r#"{"id":"$ID","result":{"type":"agent_started","argv":["cursor-agent"],
+    "agent":{"pane_id":"w2:p1","agent_status":"unknown","launch_pending":true,"name":"w"}}}"#;
+const SHELL: &str = r#"{"id":"$ID","result":{"type":"pane_info","pane":
+    {"pane_id":"w2:p1","workspace_id":"w2","tab_id":"w2:t1","agent_status":"unknown","cwd":"/p"}}}"#;
+const AGENT_UP: &str = r#"{"id":"$ID","result":{"type":"pane_info","pane":
+    {"pane_id":"w2:p1","workspace_id":"w2","tab_id":"w2:t1","agent":"cursor","agent_status":"idle","cwd":"/p"}}}"#;
+
+fn start(timeout: Duration) -> StartOptions {
+    StartOptions {
+        name: "w".into(),
+        kind: "cursor".into(),
+        pane_id: "w2:p1".into(),
+        timeout: Some(timeout),
+        ..StartOptions::default()
+    }
+}
+
+/// `agent.start` answering `launch_pending` is the command typed, not the
+/// agent up. A pane that stays a shell — the CLI is not installed — ends in
+/// `timeout`, naming the command herdr typed.
+#[test]
+fn a_start_that_never_becomes_an_agent_is_a_timeout_naming_the_command() {
+    let f = Fake::new(|method, _| match method {
+        "agent.start" => PENDING.into(),
+        "pane.get" => SHELL.into(),
+        _ => OK.into(),
+    });
+    let err = f
+        .herdr()
+        .start_agent(&start(Duration::from_millis(300)))
+        .expect_err("a pane that stayed a shell is not a start");
+    assert!(err.is_code("timeout"), "{err}");
+    let said = err.to_string();
+    assert!(
+        said.contains("cursor-agent") && said.contains("w2:p1"),
+        "{said}"
+    );
+    assert!(f.methods().iter().any(|m| m == "pane.get"));
+}
+
+/// The start is over the moment herdr sees an agent in the pane, whatever its
+/// state: one stopped at its own login question did start.
+#[test]
+fn a_pending_start_ends_when_the_pane_shows_an_agent() {
+    static ASKED: AtomicU32 = AtomicU32::new(0);
+    let f = Fake::new(|method, _| match method {
+        "agent.start" => PENDING.into(),
+        "pane.get" if ASKED.fetch_add(1, Ordering::SeqCst) < 2 => SHELL.into(),
+        "pane.get" => AGENT_UP.into(),
+        _ => OK.into(),
+    });
+    f.herdr()
+        .start_agent(&start(Duration::from_secs(20)))
+        .expect("the agent came up");
+    let asked = f.methods().iter().filter(|m| *m == "pane.get").count();
+    assert_eq!(asked, 3, "asked until the agent showed, and no further");
+}
+
+/// An answer that does not say `launch_pending` is taken as it was before:
+/// nothing is asked of the pane.
+#[test]
+fn a_start_that_is_not_pending_asks_nothing_more() {
+    let f = Fake::new(standard);
+    f.herdr()
+        .start_agent(&start(Duration::from_secs(20)))
+        .expect("start");
+    assert_eq!(f.methods(), vec!["agent.start"]);
+    assert_eq!(f.params("agent.start")["timeout_ms"], json!(20_000));
+}
+
 #[test]
 fn a_bounded_wait_sends_the_timeout_and_the_states() {
     let f = Fake::new(standard);
