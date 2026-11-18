@@ -442,7 +442,9 @@ pane, `send` opens one:
    Each launch carries its own value (`HERDR_TOWER_BOARD_RUN`), which the view
    puts on its token as it starts; the opener counts the view as running when
    that value shows, or (where herdr can see it) when the shell is busy, within
-   15 seconds. On Windows herdr's process observer reports only `pwsh.exe`
+   60 seconds (a loaded Windows machine was seen taking 52). Not seen by then,
+   it says so: with the shell's last line when there is one, else that the view
+   may still be starting and a second `board open` tells. On Windows herdr's process observer reports only `pwsh.exe`
    while the view runs under it, so there a live token, not an idle-looking
    shell, decides that the pane is open — a running view is never typed over.
 4. The running view keeps its own expiring `tower-board` token (value `1`)
