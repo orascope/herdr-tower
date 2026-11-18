@@ -97,7 +97,9 @@ The snapshot is only the latest pass. What happened before it is in
 the supervisor starting and why it stopped, a Herdr server connecting, failing
 or disappearing (once per change, not once per poll), each idle-loop message
 sent or failed, a loop stopping and why, each scheduled message sent, missed or
-skipped, and the dock being brought back. A
+skipped, and the dock being brought back — or, when a restart runs and does
+not bring it back, why: the restart's last error line (its whole error output
+is kept in `dock-restart.err` beside the log) or how it ended. A
 pass that cannot read or write what it needs is logged once and tried again
 every two seconds rather than ending the supervisor, and a supervisor that
 stopped without saying why — restarted, signalled or killed — is noted by the
