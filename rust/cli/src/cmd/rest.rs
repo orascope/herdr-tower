@@ -1093,9 +1093,11 @@ fn watch_board(
     let h = tower_cli::muxsel::default_mux();
     let pane = herdrx::current_pane_id();
     let color = std::io::stdout().is_terminal();
+    let title = boardwatch::pane_title(repo);
     if color {
         let mut out = std::io::stdout().lock();
         let _ = out.write_all(boardwatch::CLEAR_ALL.as_bytes());
+        let _ = out.write_all(boardwatch::title_escape(&title).as_bytes());
         let _ = out.flush();
     }
     let daemon = tower_state::DaemonStore::new(store.dir());
@@ -1168,7 +1170,7 @@ fn watch_board(
             let _ = out.flush();
         }
         if let Some(p) = &pane {
-            boardwatch::claim_token(&h, p);
+            boardwatch::claim_token(&h, p, &title);
         }
         let Some((_mode, rx)) = &keys else {
             std::thread::sleep(boardwatch::REDRAW_EVERY);
