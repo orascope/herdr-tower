@@ -339,7 +339,7 @@ pub fn render_editing(board: &Board, offset: UtcOffset, color: bool, editing: Ed
         let mut head = vendor_label(v.name, 8, color);
         head.push_str(&paint(BOLD, v.limits.plan.as_deref().unwrap_or("—")));
         if let Some(account) = &v.account {
-            head.push_str(&paint(DIM, &format!("  {account}")));
+            head.push_str(&paint(DIM, &format!("  ({account})")));
         }
         if v.limits.reached {
             head.push_str(&paint(ansi(Level::Red), "  LIMIT REACHED"));
@@ -983,8 +983,8 @@ mod tests {
                 .unwrap_or_else(|| panic!("no {name} heading in\n{text}"))
                 .to_string()
         };
-        assert!(line("claude").contains("Max 5x  a@example.com"), "{text}");
-        assert!(line("gemini").contains("g@example.com"), "{text}");
+        assert!(line("claude").contains("Max 5x  (a@example.com)"), "{text}");
+        assert!(line("gemini").contains("(g@example.com)"), "{text}");
         assert!(!line("codex").contains('@'), "{text}");
         let j = to_json(&b);
         assert_eq!(j["vendors"][0]["account"], "a@example.com");

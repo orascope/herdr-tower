@@ -18,16 +18,16 @@ colour, the bar is `█` used and `░` unused:
 ```
 USAGE  updated 17:33
 
-claude  Max 5x  you@example.com
+claude  Max 5x  (you@example.com)
  ◆5h  ███░░░░░░░░░░░░░░░░░  83% left  resets 21:39 (in 4h06m)
  ●7d  ███████░░░░░░░░░░░░░  67% left  resets Thu 02:59 (in 6d9h)
 
-codex   Pro  you@example.com  as of Sep 21 00:07
+codex   Pro  (you@example.com)  as of Sep 21 00:07
  ◆5h  —
  ●7d  ███████████████████░   6% left  resets Sat 17:35 (in 2d0h)
 ```
 
-Beside each plan is the account that AI's CLI is signed in to on this machine,
+Beside each plan, in parentheses, is the account that AI's CLI is signed in to on this machine,
 so a second login is easy to tell apart. It is read from the CLI's own login
 file every time the board is drawn, with no request made: claude's
 `oauthAccount.emailAddress` in `.claude.json` (under `$CLAUDE_CONFIG_DIR` when
