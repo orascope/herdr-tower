@@ -237,6 +237,9 @@ pub struct Vendor {
     pub limits: Limits,
     /// Why there are no figures, or why they may be old.
     pub note: Option<String>,
+    /// The account the CLI is signed in to here (an email address, or "API
+    /// key"), from its own login file: see [`crate::usageaccount`].
+    pub account: Option<String>,
 }
 
 /// Every block, in the order they are drawn.
@@ -335,6 +338,9 @@ pub fn render_editing(board: &Board, offset: UtcOffset, color: bool, editing: Ed
         let covered = crate::usageguard::vendor_of(v.name).is_some();
         let mut head = vendor_label(v.name, 8, color);
         head.push_str(&paint(BOLD, v.limits.plan.as_deref().unwrap_or("—")));
+        if let Some(account) = &v.account {
+            head.push_str(&paint(DIM, &format!("  {account}")));
+        }
         if v.limits.reached {
             head.push_str(&paint(ansi(Level::Red), "  LIMIT REACHED"));
         }
@@ -554,6 +560,7 @@ pub fn to_json(board: &Board) -> Value {
         "vendors": board.vendors.iter().map(|v| json!({
             "name": v.name,
             "plan": v.limits.plan,
+            "account": v.account,
             "five_hour": window(&v.limits.five_hour),
             "seven_day": window(&v.limits.seven_day),
             "as_of": ts(&v.limits.as_of),
@@ -956,6 +963,34 @@ mod tests {
         );
     }
 
+    /// The signed-in account follows the plan on each AI's heading, and is
+    /// in the JSON; an AI with none read shows nothing extra.
+    #[test]
+    fn each_ai_names_the_account_it_is_signed_in_to() {
+        let mut b = board();
+        b.vendors[0].account = Some("a@example.com".into());
+        b.vendors[2].account = Some("g@example.com".into());
+        let text = render(&b, KST, false);
+        let line = |name: &str| {
+            text.lines()
+                // The heading under each rule, not the calendar's row.
+                .find(|l| {
+                    l.trim_start_matches('▌').starts_with(name)
+                        && !l.contains('●')
+                        && !l.contains('◆')
+                        && !l.contains("no 5h")
+                })
+                .unwrap_or_else(|| panic!("no {name} heading in\n{text}"))
+                .to_string()
+        };
+        assert!(line("claude").contains("Max 5x  a@example.com"), "{text}");
+        assert!(line("gemini").contains("g@example.com"), "{text}");
+        assert!(!line("codex").contains('@'), "{text}");
+        let j = to_json(&b);
+        assert_eq!(j["vendors"][0]["account"], "a@example.com");
+        assert!(j["vendors"][1]["account"].is_null());
+    }
+
     fn board() -> Board {
         let now = at(1_790_211_600);
         Board {
@@ -964,6 +999,7 @@ mod tests {
             vendors: vec![
                 Vendor {
                     name: "claude",
+                    account: None,
                     limits: Limits {
                         plan: Some("Max 5x".into()),
                         five_hour: Some(Window {
@@ -981,6 +1017,7 @@ mod tests {
                 },
                 Vendor {
                     name: "codex",
+                    account: None,
                     limits: Limits {
                         plan: Some("Pro".into()),
                         five_hour: None,
@@ -995,6 +1032,7 @@ mod tests {
                 },
                 Vendor {
                     name: "gemini",
+                    account: None,
                     limits: Limits::default(),
                     note: Some("no 5h or 7d windows".into()),
                 },

@@ -49,6 +49,7 @@ pub mod selfpath;
 pub mod skills;
 pub mod supervisorlog;
 pub mod tree;
+pub mod usageaccount;
 pub mod usagecmd;
 pub mod usagefetch;
 pub mod usageguard;

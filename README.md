@@ -51,7 +51,7 @@ and a drag sets its height.
 in the preview panel below the session list](docs/images/tower-preview.png)
 
 `u` in the tower puts the usage board where the preview was — each AI's plan
-windows, when they reset, and the usage guard's sliders:
+and signed-in account, its windows, when they reset, and the usage guard's sliders:
 
 [View the usage board (`u`)](docs/images/tower-usage.png)
 

@@ -429,6 +429,7 @@ mod tests {
         };
         Vendor {
             name,
+            account: None,
             limits: Limits {
                 five_hour: w(five),
                 seven_day: w(seven),
