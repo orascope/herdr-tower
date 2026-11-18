@@ -662,7 +662,8 @@ fn supervise_logged(
     // process was started from.
     let tower_binary = crate::dockkeep::launcher(executable, Some(home))
         .unwrap_or_else(|| executable.to_path_buf());
-    let mut dock = crate::dockkeep::Keeper::new(executable, Some(home.to_path_buf()));
+    let mut dock = crate::dockkeep::Keeper::new(executable, Some(home.to_path_buf()))
+        .with_errors(store.dir().join(crate::dockkeep::ERRORS_FILE));
     let mut usage_tab = crate::usagetab::Keeper::default();
     let mut id_labels = crate::idlabels::Reconciler::default();
     // The usage tab left from before the tower showed the board, closed on
@@ -1002,6 +1003,9 @@ fn supervise_logged(
                 }
                 Some(crate::dockkeep::Restart::Failed(e)) => {
                     log.line(&format!("dock: could not start it again: {e}"));
+                }
+                Some(crate::dockkeep::Restart::Ended(why)) => {
+                    log.line(&format!("dock: the restart did not bring it back: {why}"));
                 }
                 None => {}
             }

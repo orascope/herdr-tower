@@ -25,6 +25,10 @@ use std::time::{Duration, Instant};
 
 use herdrx::{Pane, Workspace};
 
+/// The file in the state directory that holds the last restart's error
+/// output.
+pub const ERRORS_FILE: &str = "dock-restart.err";
+
 /// How long the supervisor waits before its first retry, and the step by which
 /// each consecutive failure lengthens that wait.
 const RETRY_STEP: Duration = Duration::from_secs(5);
@@ -241,6 +245,9 @@ pub enum Restart {
     Started,
     /// Starting one failed, with why; the next try waits out the backoff.
     Failed(String),
+    /// The last one ran and did not bring the tower back, with what it said
+    /// (its last error line) or how it ended.
+    Ended(String),
 }
 
 /// Runs `dock` again, at most one at a time, with a lengthening wait after
@@ -255,6 +262,10 @@ pub struct Keeper {
     /// `None` means "may start now"; the supervisor's clock is the only one
     /// consulted, so a system clock change cannot postpone a restart.
     hold_until: Option<Instant>,
+    /// Where a restart's error output goes, read back when it fails; `None`
+    /// throws it away. A file rather than a pipe: a pipe held open by
+    /// anything the child left behind would stall the supervisor reading it.
+    errors: Option<PathBuf>,
 }
 
 impl Keeper {
@@ -265,7 +276,15 @@ impl Keeper {
             running: None,
             failures: 0,
             hold_until: None,
+            errors: None,
         }
+    }
+
+    /// Keeps each restart's error output in `path` (overwritten by the
+    /// next), so a restart that fails says why in the supervisor's log.
+    pub fn with_errors(mut self, path: impl Into<PathBuf>) -> Self {
+        self.errors = Some(path.into());
+        self
     }
 
     /// One supervisor pass.
@@ -284,7 +303,13 @@ impl Keeper {
     ///
     /// Says what it started, if anything, for the supervisor's log.
     pub fn tick(&mut self, keep: bool, gone: Option<bool>, now: Instant) -> Option<Restart> {
-        self.reap();
+        if let Some(why) = self.reap() {
+            // A failure holds the next start for the backoff, so nothing
+            // else would happen on this pass: say why it ended instead.
+            if keep {
+                return Some(Restart::Ended(why));
+            }
+        }
         if !keep {
             // Someone turned the dock loose while a restart was in flight.
             // That child never reads the setting, so leaving it be would
@@ -310,7 +335,11 @@ impl Keeper {
         if self.hold_until.is_some_and(|until| now < until) {
             return None;
         }
-        match spawn_dock(&self.executable, self.home.as_deref()) {
+        match spawn_dock(
+            &self.executable,
+            self.home.as_deref(),
+            self.errors.as_deref(),
+        ) {
             Ok(child) => {
                 self.running = Some(child);
                 Some(Restart::Started)
@@ -350,27 +379,34 @@ impl Keeper {
         self.running.is_some()
     }
 
-    fn reap(&mut self) {
-        let Some(child) = self.running.as_mut() else {
-            return;
-        };
+    /// Collects a finished restart; why it failed, when it did.
+    fn reap(&mut self) -> Option<String> {
+        let child = self.running.as_mut()?;
         match child.try_wait() {
             Ok(Some(status)) => {
                 let now = Instant::now();
                 self.running = None;
                 if status.success() {
                     self.rested();
+                    None
                 } else {
                     self.failed(now);
+                    let said = self
+                        .errors
+                        .as_deref()
+                        .and_then(|p| std::fs::read(p).ok())
+                        .and_then(|b| last_error_line(&b));
+                    Some(said.unwrap_or_else(|| format!("it {}", ended_how(status))))
                 }
             }
             // Still working. `dock` waits up to five seconds for the tower to
             // publish its active token, which is longer than one pass.
-            Ok(None) => {}
-            Err(_) => {
+            Ok(None) => None,
+            Err(e) => {
                 let now = Instant::now();
                 self.running = None;
                 self.failed(now);
+                Some(format!("could not wait for it: {e}"))
             }
         }
     }
@@ -442,7 +478,11 @@ fn is_runnable(path: &Path) -> bool {
 /// `--require-active` because only a tower that actually started counts as a
 /// restored dock: a handoff to another invocation is reported as success by
 /// the plain command, and the supervisor would stop retrying on it.
-fn spawn_dock(executable: &Path, home: Option<&Path>) -> std::io::Result<Child> {
+fn spawn_dock(
+    executable: &Path,
+    home: Option<&Path>,
+    errors: Option<&Path>,
+) -> std::io::Result<Child> {
     let launcher = launcher(executable, home).ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -454,8 +494,33 @@ fn spawn_dock(executable: &Path, home: Option<&Path>) -> std::io::Result<Child> 
         .arg("--require-active")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        // Kept when it can be, never a reason not to start.
+        .stderr(
+            errors
+                .and_then(|p| std::fs::File::create(p).ok())
+                .map_or_else(Stdio::null, Stdio::from),
+        )
         .spawn()
+}
+
+/// The last line of a restart's error output worth logging: not blank, with
+/// the program's `herdr-tower: ` prefix taken off, cleaned and at most 200
+/// columns. Only the end of a long output is read.
+pub fn last_error_line(bytes: &[u8]) -> Option<String> {
+    let tail = &bytes[bytes.len().saturating_sub(4096)..];
+    let text = String::from_utf8_lossy(tail);
+    let line = text.lines().map(str::trim).rfind(|l| !l.is_empty())?;
+    let line = line.strip_prefix("herdr-tower: ").unwrap_or(line);
+    let clean = tower_state::clean_text(line).trim().to_string();
+    (!clean.is_empty()).then(|| tower_text::truncate_cell(&clean, 200))
+}
+
+/// "exited with code 1", or how else it ended.
+fn ended_how(status: std::process::ExitStatus) -> String {
+    match status.code() {
+        Some(code) => format!("exited with code {code}"),
+        None => format!("ended: {status}"),
+    }
 }
 
 #[cfg(test)]
@@ -1110,6 +1175,7 @@ mod tests {
                     None => None,
                     Some(Restart::Failed(_)) => Some("failed"),
                     Some(Restart::Started) => Some("started"),
+                    Some(Restart::Ended(_)) => Some("ended"),
                 };
                 let at = format!("seed {seed} pass {pass}: keep={keep} gone={gone:?}");
                 assert_eq!(got, want, "{at}");
@@ -1122,6 +1188,91 @@ mod tests {
             }
         }
     }
+    /// A restart that runs and fails says why on the pass that collects it:
+    /// its last error line, without the program's prefix — or, with nothing
+    /// said, how it ended. Seen on Windows, where the restarts' output was
+    /// thrown away and the log showed only "starting it again" for weeks.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_restart_says_why() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("tower-dockerr-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = |name: &str, body: &str| {
+            let p = dir.join(name);
+            std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+            p
+        };
+        let run = |exe: PathBuf| {
+            let mut keeper = Keeper::new(exe, None).with_errors(dir.join(ERRORS_FILE));
+            let now = Instant::now();
+            assert_eq!(keeper.tick(true, Some(true), now), Some(Restart::Started));
+            let until = Instant::now() + Duration::from_secs(10);
+            loop {
+                match keeper.tick(true, Some(true), Instant::now()) {
+                    None if Instant::now() < until => std::thread::sleep(Duration::from_millis(20)),
+                    other => return (other, keeper.failures),
+                }
+            }
+        };
+        let said = script(
+            "said",
+            "echo 'warming up' >&2; echo 'herdr-tower: the tower is still starting in w1:p4 (workspace x)' >&2; echo >&2; exit 1",
+        );
+        assert_eq!(
+            run(said),
+            (
+                Some(Restart::Ended(
+                    "the tower is still starting in w1:p4 (workspace x)".into()
+                )),
+                1
+            )
+        );
+        let silent = script("silent", "exit 3");
+        assert_eq!(
+            run(silent),
+            (Some(Restart::Ended("it exited with code 3".into())), 1)
+        );
+        let fine = script("fine", "echo 'herdr-tower: noise' >&2; exit 0");
+        let mut keeper = Keeper::new(fine, None).with_errors(dir.join(ERRORS_FILE));
+        assert_eq!(
+            keeper.tick(true, Some(true), Instant::now()),
+            Some(Restart::Started)
+        );
+        let until = Instant::now() + Duration::from_secs(10);
+        while keeper.restarting() && Instant::now() < until {
+            assert_eq!(
+                keeper.tick(true, Some(false), Instant::now()),
+                None,
+                "success says nothing"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(keeper.failures, 0);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_logged_error_line_is_the_last_one_said() {
+        assert_eq!(last_error_line(b""), None);
+        assert_eq!(last_error_line(b"\n  \n"), None);
+        assert_eq!(
+            last_error_line(b"one\nherdr-tower: two\r\n\n").as_deref(),
+            Some("two")
+        );
+        assert!(!last_error_line(b"bad \x1b[31mred\x07")
+            .unwrap()
+            .contains('\x1b'));
+        let long = vec![b'x'; 10_000];
+        assert!(tower_text::width(&last_error_line(&long).unwrap()) <= 200);
+        assert_eq!(
+            last_error_line(&[0xff, b'o', b'k']).as_deref(),
+            Some("\u{fffd}ok")
+        );
+    }
+
     /// 🚨 The tab of a live dock tower is reported whatever that tab is named,
     /// and on every pass — which is the whole of #40. A reclaim that renamed the
     /// workspace and then failed on the tab leaves exactly this state: the
