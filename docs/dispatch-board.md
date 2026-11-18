@@ -439,6 +439,12 @@ pane, `send` opens one:
    `$env:HERDR_TOWER_STATE_DIR='…'; $env:HERDR_SOCKET_PATH='…'; & '…\herdr-tower.exe' 'board' '--watch' '--repo' '…'`,
    the same form as the dock's. A line typed but not seen running reports the
    pane's last words (the shell's complaint) with the failure.
+   Each launch carries its own value (`HERDR_TOWER_BOARD_RUN`), which the view
+   puts on its token as it starts; the opener counts the view as running when
+   that value shows, or (where herdr can see it) when the shell is busy, within
+   15 seconds. On Windows herdr's process observer reports only `pwsh.exe`
+   while the view runs under it, so there a live token, not an idle-looking
+   shell, decides that the pane is open — a running view is never typed over.
 4. The running view keeps its own expiring `tower-board` token (value `1`)
    fresh, and titles its pane `Board · <repo folder>` — in herdr and in the
    terminal's own title — so the border names the board, not the shell under

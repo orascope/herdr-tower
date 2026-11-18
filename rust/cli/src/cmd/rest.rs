@@ -1094,11 +1094,17 @@ fn watch_board(
     let pane = herdrx::current_pane_id();
     let color = std::io::stdout().is_terminal();
     let title = boardwatch::pane_title(repo);
+    let token = boardwatch::token_value(std::env::var(boardwatch::RUN_ENV).ok().as_deref());
     if color {
         let mut out = std::io::stdout().lock();
         let _ = out.write_all(boardwatch::CLEAR_ALL.as_bytes());
         let _ = out.write_all(boardwatch::title_escape(&title).as_bytes());
         let _ = out.flush();
+    }
+    // Claimed before the first frame, which reads the board and the store:
+    // the opener is waiting to see this view's value.
+    if let Some(p) = &pane {
+        boardwatch::claim_token(&h, p, &title, &token);
     }
     let daemon = tower_state::DaemonStore::new(store.dir());
     // Clicks only on a terminal; the board still draws without one.
@@ -1170,7 +1176,7 @@ fn watch_board(
             let _ = out.flush();
         }
         if let Some(p) = &pane {
-            boardwatch::claim_token(&h, p, &title);
+            boardwatch::claim_token(&h, p, &title, &token);
         }
         let Some((_mode, rx)) = &keys else {
             std::thread::sleep(boardwatch::REDRAW_EVERY);

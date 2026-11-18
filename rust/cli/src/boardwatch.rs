@@ -34,6 +34,10 @@ pub const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 pub const NOTICE_FOR: Duration = Duration::from_secs(6);
 /// How long a new split's shell gets to come up.
 const SHELL_WAIT: Duration = Duration::from_secs(5);
+/// How long a typed view gets to be seen running. Longer than the shell's:
+/// on Windows a binary's first start can sit behind a security scan for
+/// several seconds, and the wait ends as soon as the view is seen.
+const VIEW_WAIT: Duration = Duration::from_secs(15);
 
 /// Whether this pane runs a board view, and so is never the dock's tower.
 /// The backend whose records the board can call current: `backend`, when the
@@ -66,9 +70,20 @@ pub enum Found {
     Stale,
 }
 
+/// Whether herdr's process observer sees a program a pane's shell runs. On
+/// Windows it reports only the shell — `pwsh.exe` — while the view runs under
+/// it, so an idle-looking shell there proves nothing (#47).
+pub const SHELL_SHOWS_ITS_PROGRAMS: bool = !cfg!(windows);
+
 /// Judges a claim against what herdr reports under its pane id.
-/// `idle_shell` is `None` when the process could not be read.
-pub fn judge(claim: &PaneClaim, pane: Option<&Pane>, idle_shell: Option<bool>) -> Found {
+/// `idle_shell` is `None` when the process could not be read;
+/// `shell_shows_programs` is [`SHELL_SHOWS_ITS_PROGRAMS`] outside tests.
+pub fn judge(
+    claim: &PaneClaim,
+    pane: Option<&Pane>,
+    idle_shell: Option<bool>,
+    shell_shows_programs: bool,
+) -> Found {
     let Some(pane) = pane else {
         return Found::Stale;
     };
@@ -79,9 +94,15 @@ pub fn judge(claim: &PaneClaim, pane: Option<&Pane>, idle_shell: Option<bool>) -
     {
         return Found::Stale;
     }
-    // The shell decides, not the token: a view that ended leaves its token
-    // behind for up to its TTL, and an idle shell in our own terminal is the
-    // stronger fact.
+    // Where the shell can be seen, it decides, not the token: a view that
+    // ended leaves its token behind for up to its TTL, and an idle shell in
+    // our own terminal is the stronger fact. Where it cannot, the shell always
+    // looks idle, and only the token tells a running view from an empty
+    // shell — typing over a running view is the worse mistake, so a token at
+    // most TTL old means open.
+    if !shell_shows_programs && is_board_pane(pane) {
+        return Found::Open;
+    }
     match idle_shell {
         Some(true) => Found::Restart,
         // Something runs there — the view, or it starting — or we could not
@@ -98,17 +119,39 @@ pub fn judge(claim: &PaneClaim, pane: Option<&Pane>, idle_shell: Option<bool>) -
 ///
 /// Written for the pane's shell the way the dock's line is: through `env` on
 /// Unix, and in PowerShell's own syntax on Windows, which has no `env`.
-pub fn watch_command(exe: &Path, repo: &str, state_dir: &Path, socket: &Path) -> String {
+///
+/// `run` is this launch's own value: the view puts it on its token
+/// ([`RUN_ENV`]), so the opener knows this very view came up — a view that
+/// ended a moment ago leaves only its own, older value behind.
+pub fn watch_command(exe: &Path, repo: &str, state_dir: &Path, socket: &Path, run: &str) -> String {
     let state_dir = state_dir.to_string_lossy();
     let socket = socket.to_string_lossy();
     crate::dockcmd::shell_line(
         &[
             ("HERDR_TOWER_STATE_DIR", &state_dir),
             ("HERDR_SOCKET_PATH", &socket),
+            (RUN_ENV, run),
         ],
         &exe.to_string_lossy(),
         &["board", "--watch", "--repo", repo],
     )
+}
+
+/// The variable that carries a launch's value to the view it starts.
+pub const RUN_ENV: &str = "HERDR_TOWER_BOARD_RUN";
+
+/// The value a view puts on its token: the launch's own, or `1` for a view
+/// someone started by hand.
+pub fn token_value(run: Option<&str>) -> String {
+    run.map(str::trim)
+        .filter(|r| !r.is_empty() && r.len() <= 64 && r.bytes().all(|b| b.is_ascii_graphic()))
+        .unwrap_or("1")
+        .to_string()
+}
+
+/// Whether the launch whose value is `run` is seen running in `pane`.
+pub fn launched_view_runs(pane: &Pane, run: &str) -> bool {
+    pane.tokens.get(TOKEN).is_some_and(|v| v == run)
 }
 
 /// The board pane's title: `Board · <repo folder>`, so herdr's border and
@@ -205,7 +248,7 @@ pub fn open(h: &Herdr, boards: &BoardStore, spec: &OpenSpec<'_>) -> Result<Opene
                 .ok()
                 .map(|i| crate::usagetab::idle_shell(&i))
         });
-        match judge(&claim, pane.as_ref(), idle) {
+        match judge(&claim, pane.as_ref(), idle, SHELL_SHOWS_ITS_PROGRAMS) {
             Found::Open => return Ok(Opened::AlreadyOpen(claim.pane_id)),
             Found::Unknown => return Ok(Opened::Unreadable(claim.pane_id)),
             Found::Restart => {
@@ -350,29 +393,32 @@ fn type_view(h: &Herdr, spec: &OpenSpec<'_>, pane_id: &str, terminal_id: &str) -
         }
         std::thread::sleep(Duration::from_millis(200));
     }
-    let sent = h.run(
-        pane_id,
-        &watch_command(spec.exe, spec.repo, spec.state_dir, spec.socket),
-    );
+    let run = crate::dockcmd::starting_lease_value();
+    let line = watch_command(spec.exe, spec.repo, spec.state_dir, spec.socket, &run);
+    let sent = h.run(pane_id, &line);
     let seen = Instant::now();
     loop {
-        // A busy shell in our terminal, not the token: a view stopped just
-        // before leaves its token behind for a while.
+        // This launch's own value on the token, or a busy shell in our
+        // terminal. Not just any token: a view stopped just before leaves
+        // its token behind for a while, under its own older value. The value
+        // is what works on Windows, where herdr sees only the shell.
         let running = look(h, pane_id).ok().flatten().is_some_and(|p| {
             p.terminal_id == terminal_id
-                && h.process_info(pane_id)
-                    .is_ok_and(|i| !crate::usagetab::idle_shell(&i))
+                && (launched_view_runs(&p, &run)
+                    || (SHELL_SHOWS_ITS_PROGRAMS
+                        && h.process_info(pane_id)
+                            .is_ok_and(|i| !crate::usagetab::idle_shell(&i))))
         });
         if running {
             return Typed::Running;
         }
-        if seen.elapsed() > SHELL_WAIT {
+        if seen.elapsed() > VIEW_WAIT {
             return Typed::NotSeen(match sent {
                 Ok(()) => format!(
                     "the board view was typed into {pane_id} but not seen running{}; `board open` retries once the shell is idle",
                     h.read(pane_id, herdrx::ReadSource::Recent, 20)
                         .ok()
-                        .and_then(|s| last_words(&s))
+                        .and_then(|s| complaint(&s, &line))
                         .map(|l| format!(" — the pane shows: {l}"))
                         .unwrap_or_default()
                 ),
@@ -402,12 +448,20 @@ fn last_words(screen: &str) -> Option<String> {
     Some(tower_text::truncate_cell(&last, 160))
 }
 
-/// Plants the view's token and its title on its own pane.
-pub fn claim_token(h: &Herdr, pane_id: &str, title: &str) {
+/// The shell's last words after `line` was typed, unless they are only a
+/// piece of `line` itself: a long line wraps, and its tail on screen is not
+/// a complaint.
+fn complaint(screen: &str, line: &str) -> Option<String> {
+    last_words(screen).filter(|l| !line.contains(l.trim_end_matches('…')))
+}
+
+/// Plants the view's token — `value`, from [`token_value`] — and its title on
+/// its own pane.
+pub fn claim_token(h: &Herdr, pane_id: &str, title: &str, value: &str) {
     let _ = h.report_metadata(&herdrx::Metadata {
         pane_id: pane_id.to_string(),
         source: Some(SOURCE.to_string()),
-        tokens: [(TOKEN.to_string(), "1".to_string())].into(),
+        tokens: [(TOKEN.to_string(), value.to_string())].into(),
         title: Some(title.to_string()),
         ttl: Some(TOKEN_TTL),
         seq: 0,
@@ -1011,55 +1065,107 @@ mod tests {
 
     #[test]
     fn only_our_own_terminal_is_ever_reused() {
-        let c = claim("w1:p9", "term_A");
-        assert_eq!(judge(&c, None, None), Found::Stale, "gone");
-        assert_eq!(
-            judge(&c, Some(&pane("term_B", None, false)), Some(true)),
-            Found::Stale,
-            "the pane id was reused by another terminal"
-        );
-        assert_eq!(
-            judge(&c, Some(&pane("term_A", Some("codex"), false)), Some(true)),
-            Found::Stale,
-            "an agent lives there now"
-        );
-        assert_eq!(
-            judge(
-                &claim("w1:p9", ""),
-                Some(&pane("term_A", None, false)),
-                Some(true)
-            ),
-            Found::Stale,
-            "no terminal proof"
-        );
+        for shows in [true, false] {
+            let c = claim("w1:p9", "term_A");
+            assert_eq!(judge(&c, None, None, shows), Found::Stale, "gone");
+            assert_eq!(
+                judge(&c, Some(&pane("term_B", None, true)), Some(true), shows),
+                Found::Stale,
+                "the pane id was reused by another terminal"
+            );
+            assert_eq!(
+                judge(
+                    &c,
+                    Some(&pane("term_A", Some("codex"), true)),
+                    Some(true),
+                    shows
+                ),
+                Found::Stale,
+                "an agent lives there now"
+            );
+            assert_eq!(
+                judge(
+                    &claim("w1:p9", ""),
+                    Some(&pane("term_A", None, true)),
+                    Some(true),
+                    shows
+                ),
+                Found::Stale,
+                "no terminal proof"
+            );
+        }
     }
 
     #[test]
     fn our_pane_is_open_restarted_or_left_alone() {
         let c = claim("w1:p9", "term_A");
+        let j = |token, idle| judge(&c, Some(&pane("term_A", None, token)), idle, true);
+        assert_eq!(j(true, Some(false)), Found::Open);
+        assert_eq!(j(false, Some(true)), Found::Restart);
         assert_eq!(
-            judge(&c, Some(&pane("term_A", None, true)), Some(false)),
-            Found::Open
-        );
-        assert_eq!(
-            judge(&c, Some(&pane("term_A", None, false)), Some(true)),
-            Found::Restart
-        );
-        assert_eq!(
-            judge(&c, Some(&pane("term_A", None, false)), Some(false)),
+            j(false, Some(false)),
             Found::Open,
             "something runs there: never split a second one"
         );
         assert_eq!(
-            judge(&c, Some(&pane("term_A", None, false)), None),
+            j(false, None),
             Found::Unknown,
             "not read: said so, nothing done"
         );
         assert_eq!(
-            judge(&c, Some(&pane("term_A", None, true)), Some(true)),
+            j(true, Some(true)),
             Found::Restart,
             "the view ended; its token outlives it"
         );
+    }
+
+    /// On Windows herdr sees only `pwsh.exe` while the view runs under it
+    /// (#47): the shell always looks idle, so a live token means open — the
+    /// view is never typed over — and only a pane without one is restarted.
+    #[test]
+    fn where_the_shell_hides_its_programs_the_token_decides() {
+        let c = claim("w1:p9", "term_A");
+        let j = |token, idle| judge(&c, Some(&pane("term_A", None, token)), idle, false);
+        assert_eq!(
+            j(true, Some(true)),
+            Found::Open,
+            "the view runs under an idle-looking shell"
+        );
+        assert_eq!(j(true, None), Found::Open);
+        assert_eq!(
+            j(false, Some(true)),
+            Found::Restart,
+            "no view: the shell is empty"
+        );
+        assert_eq!(j(false, Some(false)), Found::Open);
+        assert_eq!(j(false, None), Found::Unknown);
+        assert_eq!(SHELL_SHOWS_ITS_PROGRAMS, !cfg!(windows));
+    }
+
+    /// The opener knows its own launch by the value it typed; a view that
+    /// ended just before left an older value, and a hand-started view has
+    /// `1`.
+    #[test]
+    fn a_launch_is_seen_by_its_own_value_only() {
+        let run = crate::dockcmd::starting_lease_value();
+        let mut p = pane("term_A", None, false);
+        assert!(!launched_view_runs(&p, &run), "no token");
+        p.tokens.insert(TOKEN.into(), "1".into());
+        assert!(
+            !launched_view_runs(&p, &run),
+            "a hand-started or older view"
+        );
+        p.tokens
+            .insert(TOKEN.into(), "18e90ccf2d2980f0-7a64".into());
+        assert!(!launched_view_runs(&p, &run), "an earlier launch");
+        p.tokens.insert(TOKEN.into(), token_value(Some(&run)));
+        assert!(launched_view_runs(&p, &run));
+        assert!(is_board_pane(&p));
+        assert_eq!(token_value(None), "1");
+        assert_eq!(token_value(Some("  ")), "1");
+        assert_eq!(token_value(Some("a b")), "1", "one word only");
+        assert_eq!(token_value(Some(&"x".repeat(65))), "1", "bounded");
+        assert_eq!(token_value(Some(" 18e9-7a64 ")), "18e9-7a64");
     }
 
     /// PowerShell has no `env` (#47): the board line sets the variables in
@@ -1072,10 +1178,11 @@ mod tests {
             r"O:\w\it's repo",
             Path::new(r"C:\s"),
             Path::new(r"C:\h\herdr.sock"),
+            "18e9-7a64",
         );
         assert_eq!(
             cmd,
-            r"$env:HERDR_TOWER_STATE_DIR='C:\s'; $env:HERDR_SOCKET_PATH='C:\h\herdr.sock'; & 'C:\Users\u\.local\bin\herdr-tower.exe' 'board' '--watch' '--repo' 'O:\w\it''s repo'"
+            r"$env:HERDR_TOWER_STATE_DIR='C:\s'; $env:HERDR_SOCKET_PATH='C:\h\herdr.sock'; $env:HERDR_TOWER_BOARD_RUN='18e9-7a64'; & 'C:\Users\u\.local\bin\herdr-tower.exe' 'board' '--watch' '--repo' 'O:\w\it''s repo'"
         );
         assert!(!cmd.starts_with("env "));
     }
@@ -1115,6 +1222,20 @@ mod tests {
             .contains('\x1b'));
     }
 
+    #[test]
+    fn the_echo_of_our_own_line_is_not_a_complaint() {
+        let line = r"$env:HERDR_TOWER_BOARD_RUN='1'; & 'C:\u\.local\bin\herdr-tower.exe' 'board' '--watch' '--repo' 'O:\w'";
+        // The line wrapped on screen, its tail on the last row (seen on
+        // dragonfly while the view was still starting).
+        let screen = format!("PS O:\\w> {}\n{}", &line[..40], &line[40..]);
+        assert_eq!(complaint(&screen, line), None);
+        let failed = format!("PS O:\\w> {line}\nenv: not recognized\nPS O:\\w>");
+        assert_eq!(
+            complaint(&failed, line).as_deref(),
+            Some("env: not recognized")
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn the_command_and_environment_are_explicit_and_quoted() {
@@ -1123,10 +1244,11 @@ mod tests {
             "/w/my repo",
             Path::new("/s d"),
             Path::new("/sock"),
+            "18e9-7a64",
         );
         assert_eq!(
             cmd,
-            r#"env HERDR_TOWER_STATE_DIR='/s d' HERDR_SOCKET_PATH=/sock '/opt/it'\''s/herdr-tower' board --watch --repo '/w/my repo'"#
+            r#"env HERDR_TOWER_STATE_DIR='/s d' HERDR_SOCKET_PATH=/sock HERDR_TOWER_BOARD_RUN=18e9-7a64 '/opt/it'\''s/herdr-tower' board --watch --repo '/w/my repo'"#
         );
     }
 
