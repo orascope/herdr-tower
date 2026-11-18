@@ -58,9 +58,15 @@ fn board_with(home: &Path, state_dir: &Path, force: bool) -> Board {
     if home.join(".gemini").is_dir() {
         vendors.push(Vendor {
             name: "gemini",
+            account: None,
             limits: Limits::default(),
             note: Some("no 5h or 7d windows — Gemini's limits are per day".into()),
         });
+    }
+    // Read from each CLI's own login file every time: a switched login shows
+    // at once, and nothing is asked of the vendor.
+    for v in &mut vendors {
+        v.account = crate::usageaccount::account(v.name, home);
     }
     Board {
         vendors,
@@ -113,6 +119,7 @@ fn codex(home: &Path, state_dir: &Path, now: OffsetDateTime, force: bool) -> Ven
         }
         return Vendor {
             name: "codex",
+            account: None,
             limits,
             note: (!notes.is_empty()).then(|| notes.join("; ")),
         };
@@ -189,6 +196,7 @@ fn codex_from_rollouts(home: &Path, state_dir: &Path, live_error: Option<String>
     };
     Vendor {
         name: "codex",
+        account: None,
         limits,
         note,
     }
@@ -238,6 +246,7 @@ fn claude(home: &Path, state_dir: &Path, now: OffsetDateTime, force: bool) -> Ve
     }
     Vendor {
         name: "claude",
+        account: None,
         limits,
         note,
     }

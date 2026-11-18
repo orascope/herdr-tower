@@ -18,14 +18,23 @@ colour, the bar is `█` used and `░` unused:
 ```
 USAGE  updated 17:33
 
-claude  Max 5x
+claude  Max 5x  (you@example.com)
  ◆5h  ███░░░░░░░░░░░░░░░░░  83% left  resets 21:39 (in 4h06m)
  ●7d  ███████░░░░░░░░░░░░░  67% left  resets Thu 02:59 (in 6d9h)
 
-codex   Pro  as of Sep 21 00:07
+codex   Pro  (you@example.com)  as of Sep 21 00:07
  ◆5h  —
  ●7d  ███████████████████░   6% left  resets Sat 17:35 (in 2d0h)
 ```
+
+Beside each plan, in parentheses, is the account that AI's CLI is signed in to on this machine,
+so a second login is easy to tell apart. It is read from the CLI's own login
+file every time the board is drawn, with no request made: claude's
+`oauthAccount.emailAddress` in `.claude.json` (under `$CLAUDE_CONFIG_DIR` when
+set), the email in codex's ChatGPT login in `auth.json` under `$CODEX_HOME`
+(else `~/.codex`; `API key` for an API-key login), and gemini's `active` account
+in `~/.gemini/google_accounts.json`. `usage --json` carries it as `account`.
+Nothing is shown for a CLI that is not signed in.
 
 At the top, a calendar of the next eight days shows when each AI's windows
 reset. `●` marks the next seven-day reset and `◆` the next five-hour one, with
