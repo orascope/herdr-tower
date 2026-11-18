@@ -34,10 +34,11 @@ pub const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 pub const NOTICE_FOR: Duration = Duration::from_secs(6);
 /// How long a new split's shell gets to come up.
 const SHELL_WAIT: Duration = Duration::from_secs(5);
-/// How long a typed view gets to be seen running. Longer than the shell's:
-/// on Windows a binary's first start can sit behind a security scan for
-/// several seconds, and the wait ends as soon as the view is seen.
-const VIEW_WAIT: Duration = Duration::from_secs(15);
+/// How long a typed view gets to be seen running. Much longer than the
+/// shell's: on a loaded Windows machine the view's process was measured
+/// starting 19 and 52 seconds after its line was typed (dragonfly, while a
+/// build ran there), and the wait ends as soon as the view is seen.
+pub const VIEW_WAIT: Duration = Duration::from_secs(60);
 
 /// Whether this pane runs a board view, and so is never the dock's tower.
 /// The backend whose records the board can call current: `backend`, when the
@@ -414,13 +415,12 @@ fn type_view(h: &Herdr, spec: &OpenSpec<'_>, pane_id: &str, terminal_id: &str) -
         }
         if seen.elapsed() > VIEW_WAIT {
             return Typed::NotSeen(match sent {
-                Ok(()) => format!(
-                    "the board view was typed into {pane_id} but not seen running{}; `board open` retries once the shell is idle",
+                Ok(()) => not_seen_message(
+                    pane_id,
                     h.read(pane_id, herdrx::ReadSource::Recent, 20)
                         .ok()
                         .and_then(|s| complaint(&s, &line))
-                        .map(|l| format!(" — the pane shows: {l}"))
-                        .unwrap_or_default()
+                        .as_deref(),
                 ),
                 Err(e) => format!(
                     "could not tell whether the board view reached {pane_id} ({e}); `board open` retries once the shell is idle"
@@ -446,6 +446,22 @@ fn last_words(screen: &str) -> Option<String> {
         last = lines.next_back()?;
     }
     Some(tower_text::truncate_cell(&last, 160))
+}
+
+/// Why a typed view was not counted as started: with what the shell said
+/// last, when that is not our own line; without it, the view may only be
+/// slow, which a second `board open` tells apart (on Windows by the view's
+/// token, elsewhere by a busy shell).
+fn not_seen_message(pane_id: &str, complaint: Option<&str>) -> String {
+    let secs = VIEW_WAIT.as_secs();
+    match complaint {
+        Some(said) => format!(
+            "the board view was typed into {pane_id} but not seen running within {secs}s — the pane shows: {said}"
+        ),
+        None => format!(
+            "the board view was typed into {pane_id} but not seen running within {secs}s; it may still be starting — `board open` again says whether it is open"
+        ),
+    }
 }
 
 /// The shell's last words after `line` was typed, unless they are only a
@@ -1220,6 +1236,22 @@ mod tests {
         assert!(!last_words("bad \x1b[31mred\x07\n")
             .unwrap()
             .contains('\x1b'));
+    }
+
+    #[test]
+    fn a_view_not_seen_says_why_or_that_it_may_be_slow() {
+        let failed = not_seen_message("w9:pE", Some("env: not recognized"));
+        assert!(
+            failed.contains("within 60s — the pane shows: env: not recognized"),
+            "{failed}"
+        );
+        let slow = not_seen_message("w9:pE", None);
+        assert!(slow.contains("may still be starting"), "{slow}");
+        assert!(slow.contains("`board open` again"), "{slow}");
+        assert!(
+            VIEW_WAIT >= Duration::from_secs(60),
+            "measured starts reached 52s"
+        );
     }
 
     #[test]
