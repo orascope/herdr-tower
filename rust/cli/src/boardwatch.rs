@@ -95,15 +95,35 @@ pub fn judge(claim: &PaneClaim, pane: Option<&Pane>, idle_shell: Option<bool>) -
 /// travel on the command line too, not only in the split's environment: a
 /// view restarted in an existing pane would otherwise inherit whatever that
 /// shell has.
+///
+/// Written for the pane's shell the way the dock's line is: through `env` on
+/// Unix, and in PowerShell's own syntax on Windows, which has no `env`.
 pub fn watch_command(exe: &Path, repo: &str, state_dir: &Path, socket: &Path) -> String {
-    let q = |s: &str| tower_state::sh_quote(s);
-    format!(
-        "env HERDR_TOWER_STATE_DIR={} HERDR_SOCKET_PATH={} {} board --watch --repo {}",
-        q(&state_dir.to_string_lossy()),
-        q(&socket.to_string_lossy()),
-        q(&exe.to_string_lossy()),
-        q(repo)
+    let state_dir = state_dir.to_string_lossy();
+    let socket = socket.to_string_lossy();
+    crate::dockcmd::shell_line(
+        &[
+            ("HERDR_TOWER_STATE_DIR", &state_dir),
+            ("HERDR_SOCKET_PATH", &socket),
+        ],
+        &exe.to_string_lossy(),
+        &["board", "--watch", "--repo", repo],
     )
+}
+
+/// The board pane's title: `Board · <repo folder>`, so herdr's border and
+/// the terminal's title name the board rather than the shell under it.
+pub fn pane_title(repo: &str) -> String {
+    let name = Path::new(repo)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(repo);
+    format!("Board · {}", tower_state::clean_text(name))
+}
+
+/// The escape that sets the terminal's own title to `title`.
+pub fn title_escape(title: &str) -> String {
+    format!("\x1b]2;{}\x07", tower_state::clean_text(title))
 }
 
 /// The environment the board pane is split with, so its view reads the same
@@ -349,7 +369,12 @@ fn type_view(h: &Herdr, spec: &OpenSpec<'_>, pane_id: &str, terminal_id: &str) -
         if seen.elapsed() > SHELL_WAIT {
             return Typed::NotSeen(match sent {
                 Ok(()) => format!(
-                    "the board view was typed into {pane_id} but not seen running; `board open` retries once the shell is idle"
+                    "the board view was typed into {pane_id} but not seen running{}; `board open` retries once the shell is idle",
+                    h.read(pane_id, herdrx::ReadSource::Recent, 20)
+                        .ok()
+                        .and_then(|s| last_words(&s))
+                        .map(|l| format!(" — the pane shows: {l}"))
+                        .unwrap_or_default()
                 ),
                 Err(e) => format!(
                     "could not tell whether the board view reached {pane_id} ({e}); `board open` retries once the shell is idle"
@@ -360,13 +385,30 @@ fn type_view(h: &Herdr, spec: &OpenSpec<'_>, pane_id: &str, terminal_id: &str) -
     }
 }
 
-/// Plants the view's token on its own pane.
-pub fn claim_token(h: &Herdr, pane_id: &str) {
+/// What a shell said last, for a view that did not start: the last line that
+/// is not empty and not the shell's prompt waiting again, at most 160 columns,
+/// cleaned, since it is another program's output.
+fn last_words(screen: &str) -> Option<String> {
+    let mut lines = screen
+        .lines()
+        .map(|l| tower_state::clean_text(l.trim()).trim().to_string())
+        .filter(|l| !l.is_empty());
+    let mut last = lines.next_back()?;
+    // A prompt back at the end (`%`, `$`, `>`, `#`) says nothing; the line
+    // before it is the shell's complaint.
+    if last.ends_with(['%', '$', '>', '#']) {
+        last = lines.next_back()?;
+    }
+    Some(tower_text::truncate_cell(&last, 160))
+}
+
+/// Plants the view's token and its title on its own pane.
+pub fn claim_token(h: &Herdr, pane_id: &str, title: &str) {
     let _ = h.report_metadata(&herdrx::Metadata {
         pane_id: pane_id.to_string(),
         source: Some(SOURCE.to_string()),
         tokens: [(TOKEN.to_string(), "1".to_string())].into(),
-        title: None,
+        title: Some(title.to_string()),
         ttl: Some(TOKEN_TTL),
         seq: 0,
     });
@@ -1020,6 +1062,58 @@ mod tests {
         );
     }
 
+    /// PowerShell has no `env` (#47): the board line sets the variables in
+    /// the pane's session and runs the program with `&`.
+    #[cfg(windows)]
+    #[test]
+    fn the_windows_board_line_is_powershell() {
+        let cmd = watch_command(
+            Path::new(r"C:\Users\u\.local\bin\herdr-tower.exe"),
+            r"O:\w\it's repo",
+            Path::new(r"C:\s"),
+            Path::new(r"C:\h\herdr.sock"),
+        );
+        assert_eq!(
+            cmd,
+            r"$env:HERDR_TOWER_STATE_DIR='C:\s'; $env:HERDR_SOCKET_PATH='C:\h\herdr.sock'; & 'C:\Users\u\.local\bin\herdr-tower.exe' 'board' '--watch' '--repo' 'O:\w\it''s repo'"
+        );
+        assert!(!cmd.starts_with("env "));
+    }
+
+    #[test]
+    fn the_board_pane_is_titled_after_its_repo() {
+        assert_eq!(pane_title("/w/my repo"), "Board · my repo");
+        assert_eq!(pane_title("/w/bad\x1b]0;x\x07name"), "Board · bad]0;xname");
+        assert_eq!(title_escape("Board · r"), "\x1b]2;Board · r\x07");
+        // Nothing in the title can end the escape early.
+        let e = title_escape("a\x07b\x1b\\c");
+        assert_eq!(e.matches('\x07').count(), 1);
+        assert!(e.ends_with('\x07') && !e[1..].contains('\x1b'));
+    }
+
+    #[test]
+    fn a_view_that_did_not_start_reports_what_the_shell_said() {
+        let pwsh = "PS O:\\w> env HERDR_TOWER_STATE_DIR='x' herdr-tower board --watch\n\
+                    env: The term 'env' is not recognized as a name of a cmdlet.\n\
+                    \n\
+                    PS O:\\w>\n\n";
+        assert_eq!(
+            last_words(pwsh).as_deref(),
+            Some("env: The term 'env' is not recognized as a name of a cmdlet.")
+        );
+        assert_eq!(
+            last_words("zsh: command not found: herdr-tower\nquack@mac repo %").as_deref(),
+            Some("zsh: command not found: herdr-tower")
+        );
+        assert_eq!(last_words("still starting"), Some("still starting".into()));
+        assert_eq!(last_words("\n  \n"), None);
+        assert_eq!(last_words("$"), None);
+        let long = format!("{}\n", "x".repeat(400));
+        assert!(tower_text::width(&last_words(&long).unwrap()) <= 160);
+        assert!(!last_words("bad \x1b[31mred\x07\n").unwrap().contains('\x1b'));
+    }
+
+    #[cfg(unix)]
     #[test]
     fn the_command_and_environment_are_explicit_and_quoted() {
         let cmd = watch_command(
@@ -1030,8 +1124,12 @@ mod tests {
         );
         assert_eq!(
             cmd,
-            r#"env HERDR_TOWER_STATE_DIR='/s d' HERDR_SOCKET_PATH='/sock' '/opt/it'\''s/herdr-tower' board --watch --repo '/w/my repo'"#
+            r#"env HERDR_TOWER_STATE_DIR='/s d' HERDR_SOCKET_PATH=/sock '/opt/it'\''s/herdr-tower' board --watch --repo '/w/my repo'"#
         );
+    }
+
+    #[test]
+    fn the_split_carries_the_store_and_the_socket() {
         let env = watch_env(Path::new("/s"), Path::new("/sock"));
         assert_eq!(env["HERDR_TOWER_STATE_DIR"], "/s");
         assert_eq!(env["HERDR_SOCKET_PATH"], "/sock");

@@ -434,9 +434,15 @@ pane, `send` opens one:
    id and terminal id on the reservation.
 3. Once the new shell is idle — the way the usage tab waits for one — type
    `env HERDR_TOWER_STATE_DIR=… HERDR_SOCKET_PATH=… herdr-tower board --watch
-   --repo …`, so nothing is taken from the shell's cwd or environment.
+   --repo …`, so nothing is taken from the shell's cwd or environment. On
+   Windows the pane's shell is PowerShell, which has no `env`: the line is
+   `$env:HERDR_TOWER_STATE_DIR='…'; $env:HERDR_SOCKET_PATH='…'; & '…\herdr-tower.exe' 'board' '--watch' '--repo' '…'`,
+   the same form as the dock's. A line typed but not seen running reports the
+   pane's last words (the shell's complaint) with the failure.
 4. The running view keeps its own expiring `tower-board` token (value `1`)
-   fresh; ownership is proven by the claim's pane and terminal ids, not by the
+   fresh, and titles its pane `Board · <repo folder>` — in herdr and in the
+   terminal's own title — so the border names the board, not the shell under
+   it. Ownership is proven by the claim's pane and terminal ids, not by the
    token.
 
 If two panes were made anyway, the one not on the reservation closes itself
