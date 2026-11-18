@@ -1110,7 +1110,9 @@ mod tests {
         assert_eq!(last_words("$"), None);
         let long = format!("{}\n", "x".repeat(400));
         assert!(tower_text::width(&last_words(&long).unwrap()) <= 160);
-        assert!(!last_words("bad \x1b[31mred\x07\n").unwrap().contains('\x1b'));
+        assert!(!last_words("bad \x1b[31mred\x07\n")
+            .unwrap()
+            .contains('\x1b'));
     }
 
     #[cfg(unix)]
