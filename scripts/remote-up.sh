@@ -26,8 +26,11 @@
 # A Windows machine (OpenSSH server, PowerShell) gets the same steps from a
 # PowerShell script: the windows_amd64 zip, its checksum, the binary at
 # ~\.local\bin\herdr-tower.exe (the running one renamed out of the way, as
-# Windows will not overwrite it), `daemon install`, and the dock tower ended
-# so the supervisor starts the new one.
+# Windows will not overwrite it), `daemon install`, a check that the new
+# supervisor is running (Windows has no service manager to restart it, so it
+# gets a `daemon start` when it is not, and the machine fails when that does
+# not bring it up either), and the dock tower ended so the supervisor starts
+# the new one.
 set -uo pipefail
 
 usage="usage: scripts/remote-up.sh <vX.Y.Z> <release-dir> [ssh-target ...]"
@@ -77,7 +80,7 @@ for h in "${targets[@]}"; do
       && scp -q "${ssh_opts[@]}" "$dir/$a" "$dir/checksums.txt" "$h:$cache/" \
       || { echo "  copy failed"; failed=1; continue; }
     {
-      echo "\$a = '$a'; \$d = Join-Path \$env:USERPROFILE '$cache'"
+      echo "\$a = '$a'; \$v = '$version'; \$d = Join-Path \$env:USERPROFILE '$cache'"
       cat <<'REMOTE'
 $ErrorActionPreference = 'Stop'
 Set-Location $d
@@ -94,6 +97,26 @@ Copy-Item x\herdr-tower.exe $exe
 Set-Location $env:USERPROFILE
 & $exe version | Select-Object -First 1
 & $exe daemon install 2>&1 | Select-Object -Last 2
+# Nothing restarts a Windows supervisor that dies, and one started by the
+# install was once gone without a word (2026-11-19): the dock ended below would
+# then stay gone too. So the new version must be seen running, and is started
+# again when it is not. The process is looked for, not only `daemon status`:
+# a snapshot written a moment ago reads as running after its writer died.
+function Test-Supervisor {
+  $ErrorActionPreference = 'Continue'
+  foreach ($i in 1..15) {
+    $p = @(Get-CimInstance Win32_Process -Filter "Name='herdr-tower.exe'" | Where-Object { $_.ExecutablePath -eq $exe -and $_.CommandLine -match '\sdaemon\s+run\s*$' -and ($_ | Invoke-CimMethod -MethodName GetOwner).User -eq $env:USERNAME })
+    $s = & $exe daemon status 2>&1 | Out-String
+    if ($p.Count -gt 0 -and $s -match ('(?m)^running: pid=\d+ version=' + [regex]::Escape($v) + '\s')) { return $true }
+    Start-Sleep -Seconds 1
+  }
+  return $false
+}
+if (-not (Test-Supervisor)) {
+  "supervisor $v not seen running after the install -> daemon start"
+  & { $ErrorActionPreference = 'Continue'; & $exe daemon start 2>&1 | Select-Object -Last 1 }
+  if (-not (Test-Supervisor)) { throw "the supervisor $v is not running; the dock is left as it is" }
+}
 # A dock is the bare binary: its command line names nothing after the path.
 # Only this account's: another user's dock on the same machine is not ours.
 Get-CimInstance Win32_Process -Filter "Name='herdr-tower.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Trim() -match 'herdr-tower\.exe"?$' -and ($_ | Invoke-CimMethod -MethodName GetOwner).User -eq $env:USERNAME } | ForEach-Object { "dock pid $($_.ProcessId) -> end"; Stop-Process -Id $_.ProcessId -Force }
